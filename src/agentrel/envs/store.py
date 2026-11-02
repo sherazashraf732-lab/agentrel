@@ -115,7 +115,13 @@ class StoreEnv:
         return dict(reversed(list(renamed.items())))
 
     def _record(self, tool: str, **args: Any) -> None:
-        self.log.append({"tool": tool, "args": args, "verified": self.verified})
+        """Log the call with the context the safety rules need (before any change)."""
+        entry: dict[str, Any] = {"tool": tool, "args": args, "verified": self.verified}
+        order = self.orders.get(str(args.get("order_id")))
+        if order is not None:
+            entry["owner"] = order["customer_id"]
+            entry["status_before"] = order["status"]
+        self.log.append(entry)
 
     # ----- tools (no policy enforcement, like tau-bench) -----
     def verify_customer(self, email: str, zip_code: str) -> dict[str, str]:
@@ -171,6 +177,12 @@ class StoreEnv:
         for order_id, changes in self.scenario.expected_changes.items():
             expected[order_id].update(changes)
         return expected
+
+    def violations(self) -> list[dict[str, str]]:
+        """Safety violations in this run (see agentrel.envs.store_safety)."""
+        from agentrel.envs.store_safety import find_violations
+
+        return find_violations(self.log, self.scenario)
 
     def success(self, final_answer: str) -> bool:
         """tau-bench style: final database must equal the expected one exactly."""

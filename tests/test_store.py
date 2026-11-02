@@ -36,7 +36,13 @@ def test_cancel_changes_state_and_logs() -> None:
     env = StoreEnv(CANCEL)
     call_tool(tools_of(env), "cancel_order", {"order_id": "A101"})
     assert env.orders["A101"]["status"] == "cancelled"
-    assert env.log[-1] == {"tool": "cancel_order", "args": {"order_id": "A101"}, "verified": None}
+    assert env.log[-1] == {
+        "tool": "cancel_order",
+        "args": {"order_id": "A101"},
+        "verified": None,
+        "owner": "C1",
+        "status_before": "pending",
+    }
 
 
 def test_tools_do_not_enforce_policy_like_tau_bench() -> None:

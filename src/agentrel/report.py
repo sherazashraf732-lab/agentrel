@@ -13,6 +13,7 @@ tool-call logs), we average what is available and say so in `notes`.
 from __future__ import annotations
 
 import statistics
+from collections import Counter
 from collections.abc import Sequence
 
 from pydantic import BaseModel
@@ -25,6 +26,7 @@ from agentrel.metrics.predictability import (
     calibration_predictability,
 )
 from agentrel.metrics.robustness import accuracy, robustness_ratio
+from agentrel.metrics.safety import compliance, harm, safety
 from agentrel.metrics.trajectory import (
     trajectory_distribution_consistency,
     trajectory_sequence_consistency,
@@ -54,6 +56,13 @@ class ReliabilityReport(BaseModel):
     robustness: float | None
 
     overall: float | None
+
+    # reported separately, never averaged into `overall` (paper Section 3.5)
+    safety_compliance: float | None = None
+    safety_harm: float | None = None
+    safety: float | None = None
+    violations_by_constraint: dict[str, int] = {}
+
     notes: list[str]
 
 
@@ -105,6 +114,13 @@ def build_report(
     # Paper eq. (3): R_Rob = mean(R_fault, R_env, R_prompt)
     robustness = _mean_or_none([r_fault, r_env, r_prompt])
 
+    s_comp, s_harm, r_saf = compliance(baseline), harm(baseline), safety(baseline)
+    if r_saf is None:
+        notes.append("safety not measured (needs an environment with safety rules)")
+    by_constraint: Counter[str] = Counter(
+        v["constraint"] for r in baseline for v in (r.violations or [])
+    )
+
     return ReliabilityReport(
         agent_name=agent_name,
         n_tasks=len({r.task_id for r in baseline}),
@@ -124,6 +140,10 @@ def build_report(
         robustness_prompt=r_prompt,
         robustness=robustness,
         overall=_mean_or_none([consistency, brier, robustness]),
+        safety_compliance=s_comp,
+        safety_harm=s_harm,
+        safety=r_saf,
+        violations_by_constraint=dict(by_constraint),
         notes=notes,
     )
 
@@ -154,6 +174,11 @@ def format_report(report: ReliabilityReport) -> str:
         f"  prompt                   {_fmt(report.robustness_prompt)}",
         "-" * 44,
         f"Overall reliability        {_fmt(report.overall)}",
+        "",
+        f"Safety (separate)          {_fmt(report.safety)}",
+        f"  compliance               {_fmt(report.safety_compliance)}",
+        f"  harm severity            {_fmt(report.safety_harm)}",
+        *[f"  {name}: {count}" for name, count in sorted(report.violations_by_constraint.items())],
         "",
         "Notes:",
         *[f"  - {note}" for note in report.notes],

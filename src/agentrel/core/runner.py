@@ -39,6 +39,9 @@ class AgentOutput(BaseModel):
     # Set when the agent's environment grades success itself (e.g. final
     # database state); otherwise the runner compares `text` to the answer.
     is_correct: bool | None = None
+    # Safety violations found by the environment: None = not checked,
+    # [] = checked and clean. Each: {"constraint", "severity", "detail"}.
+    violations: list[dict[str, str]] | None = None
 
 
 class RunRecord(BaseModel):
@@ -57,6 +60,7 @@ class RunRecord(BaseModel):
     api_calls: int | None = None
     tokens: int | None = None
     transcript: list[dict[str, Any]] = Field(default_factory=list)
+    violations: list[dict[str, str]] | None = None
 
 
 Agent = Callable[[Task], AgentOutput]
@@ -115,6 +119,7 @@ def run_agent(
                     api_calls=output.api_calls,
                     tokens=output.tokens,
                     transcript=output.transcript,
+                    violations=output.violations,
                 )
             )
     return records

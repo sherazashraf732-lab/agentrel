@@ -128,6 +128,7 @@ def make_tool_agent(
             transcript.append({"role": "confidence", "content": conf_reply.content})
             confidence = parse_confidence(conf_reply.content)
 
+        check = getattr(env, "violations", None)
         return AgentOutput(
             text=final,
             confidence=confidence,
@@ -136,6 +137,7 @@ def make_tool_agent(
             tokens=tokens,
             transcript=transcript,
             is_correct=env.success(final),
+            violations=check() if callable(check) else None,
         )
 
     return agent
