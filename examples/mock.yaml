@@ -1,0 +1,19 @@
+# Runs instantly with no model: a simulated agent that is right 80% of the time.
+name: mock-agent
+model: "mock:0.8"
+n_runs: 5
+fault_probability: 0.2
+output_dir: agentrel-results/mock
+tasks:
+  - id: capital-france
+    prompt: What is the capital of France?
+    answer: Paris
+    paraphrases: ["Which city is France's capital?", "Name the capital city of France."]
+  - id: add
+    prompt: What is 17 + 25?
+    answer: "42"
+    paraphrases: ["Add 17 and 25.", "What do you get when you sum 17 and 25?"]
+  - id: planet
+    prompt: Which planet is known as the Red Planet?
+    answer: Mars
+    paraphrases: ["What is the name of the red planet?"]

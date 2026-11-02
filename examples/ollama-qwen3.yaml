@@ -1,0 +1,21 @@
+# Real local model via Ollama (free). Needs `ollama pull qwen3:4b` first.
+# On a CPU-only laptop each call can take 10-60 s, so keep tasks and runs small.
+name: qwen3-4b-local
+model: ollama/qwen3:4b
+n_runs: 3
+fault_probability: 0.2   # 20% of model calls fail, like the paper
+max_retries: 0           # set to 2 to measure how much retries help
+output_dir: agentrel-results/qwen3-4b
+tasks:
+  - id: capital-france
+    prompt: What is the capital of France?
+    answer: Paris
+    paraphrases: ["Which city is France's capital?"]
+  - id: add
+    prompt: What is 17 + 25?
+    answer: "42"
+    paraphrases: ["Add 17 and 25."]
+  - id: planet
+    prompt: Which planet is known as the Red Planet?
+    answer: Mars
+    paraphrases: ["What is the name of the red planet?"]
