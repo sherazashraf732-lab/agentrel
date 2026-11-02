@@ -1,0 +1,108 @@
+"""Run an agent on tasks multiple times and record every run."""
+
+from __future__ import annotations
+
+import time
+from collections.abc import Callable, Sequence
+from pathlib import Path
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class Task(BaseModel):
+    """One question for the agent.
+
+    Note: the runner passes the whole Task to the agent. Real-model adapters
+    must forward only `prompt`, never `correct_answer`.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    prompt: str
+    correct_answer: str
+
+
+class AgentOutput(BaseModel):
+    """What an agent returns for one task."""
+
+    model_config = ConfigDict(frozen=True)
+
+    text: str
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class RunRecord(BaseModel):
+    """Everything recorded about one run of one task."""
+
+    model_config = ConfigDict(frozen=True)
+
+    task_id: str
+    run_index: int
+    output_text: str | None
+    confidence: float | None
+    is_correct: bool
+    duration_s: float
+    error: str | None = None
+
+
+Agent = Callable[[Task], AgentOutput]
+
+
+def _is_correct(output: str, expected: str) -> bool:
+    """Exact match after trimming whitespace. A smarter judge comes later."""
+    return output.strip() == expected.strip()
+
+
+def run_agent(
+    agent: Agent, tasks: Sequence[Task], n_runs: int = 5
+) -> list[RunRecord]:
+    """Run `agent` on every task `n_runs` times. Agent crashes are recorded."""
+    if n_runs < 1:
+        raise ValueError(f"n_runs must be at least 1, got {n_runs}")
+
+    records: list[RunRecord] = []
+    for task in tasks:
+        for run_index in range(n_runs):
+            start = time.perf_counter()
+            try:
+                output = agent(task)
+            except Exception as exc:  # noqa: BLE001 - agent failures are data, not crashes
+                records.append(
+                    RunRecord(
+                        task_id=task.id,
+                        run_index=run_index,
+                        output_text=None,
+                        confidence=None,
+                        is_correct=False,
+                        duration_s=time.perf_counter() - start,
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
+                )
+                continue
+
+            records.append(
+                RunRecord(
+                    task_id=task.id,
+                    run_index=run_index,
+                    output_text=output.text,
+                    confidence=output.confidence,
+                    is_correct=_is_correct(output.text, task.correct_answer),
+                    duration_s=time.perf_counter() - start,
+                )
+            )
+    return records
+
+
+def save_records(records: Sequence[RunRecord], path: Path) -> None:
+    """Write one JSON object per line (JSONL)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        for record in records:
+            f.write(record.model_dump_json() + "\n")
+
+
+def load_records(path: Path) -> list[RunRecord]:
+    """Read records written by `save_records`."""
+    with path.open(encoding="utf-8") as f:
+        return [RunRecord.model_validate_json(line) for line in f if line.strip()]
