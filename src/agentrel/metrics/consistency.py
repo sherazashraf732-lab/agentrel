@@ -7,7 +7,7 @@ from __future__ import annotations
 import math
 import statistics
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from agentrel.core.runner import RunRecord
 
@@ -36,15 +36,28 @@ def outcome_consistency(records: Sequence[RunRecord]) -> float:
     return statistics.fmean(scores)
 
 
-def resource_consistency(records: Sequence[RunRecord]) -> float:
-    """C_res = exp(-mean CV), using run duration as the resource.
+def _cv(values: list[float]) -> float:
+    return statistics.pstdev(values) / (statistics.fmean(values) + EPS)
 
-    Our choices where the paper is not explicit: CV is computed per task and
-    averaged across tasks, using the population standard deviation.
+
+def resource_consistency(records: Sequence[RunRecord]) -> float:
+    """C_res = exp(-mean over resource types of CV).
+
+    Resources: run duration always; model calls and tokens when every run
+    reports them (tool agents do, plain Q&A agents don't).
+
+    Our choices where the paper is not explicit: for each resource, CV is
+    computed per task (population std) and averaged across tasks.
     """
-    cvs: list[float] = []
-    for task_runs in _group_by_task(records).values():
-        durations = [r.duration_s for r in task_runs]
-        mean = statistics.fmean(durations)
-        cvs.append(statistics.pstdev(durations) / (mean + EPS))
-    return math.exp(-statistics.fmean(cvs))
+    groups = _group_by_task(records)
+    getters: list[Callable[[RunRecord], float]] = [lambda r: r.duration_s]
+    if all(r.api_calls is not None for r in records):
+        getters.append(lambda r: float(r.api_calls or 0))
+    if all(r.tokens is not None for r in records):
+        getters.append(lambda r: float(r.tokens or 0))
+
+    per_resource = [
+        statistics.fmean(_cv([get(r) for r in runs]) for runs in groups.values())
+        for get in getters
+    ]
+    return math.exp(-statistics.fmean(per_resource))

@@ -1,0 +1,125 @@
+"""A tool-calling agent loop, like the paper's tau-bench scaffold.
+
+Each run gets a fresh Environment (its own copy of the data), so tool calls in
+one run cannot leak into the next. Everything is recorded: every model reply,
+every tool call and result (transcript), the action sequence (for trajectory
+consistency) and model calls / tokens (for resource consistency).
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any, Protocol
+
+from agentrel.core.runner import Agent, AgentOutput, Task
+from agentrel.llm.agent import CONFIDENCE_PROMPT, parse_confidence
+from agentrel.llm.ollama import ChatFn, Message, ToolSchema
+
+
+@dataclass(frozen=True)
+class Tool:
+    name: str
+    description: str
+    parameters: dict[str, Any]  # JSON schema of the arguments
+    fn: Callable[..., Any]
+
+    def schema(self) -> ToolSchema:
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.parameters,
+            },
+        }
+
+
+class Environment(Protocol):
+    """What the agent acts on. Grades success from its own final state."""
+
+    def tools(self) -> list[Tool]: ...
+
+    def success(self, final_answer: str) -> bool: ...
+
+
+def call_tool(tools: dict[str, Tool], name: str, arguments: dict[str, Any]) -> str:
+    """Run one tool. Errors are returned to the model as text, like a real API."""
+    tool = tools.get(name)
+    if tool is None:
+        return f"ERROR: unknown tool '{name}'"
+    try:
+        result = tool.fn(**arguments)
+    except Exception as exc:  # noqa: BLE001 - tool errors go back to the agent
+        return f"ERROR: {type(exc).__name__}: {exc}"
+    return result if isinstance(result, str) else json.dumps(result, default=str)
+
+
+def make_tool_agent(
+    chat: ChatFn,
+    make_env: Callable[[Task], Environment],
+    system_prompt: str,
+    max_steps: int = 8,
+    ask_confidence: bool = True,
+) -> Agent:
+    """Build an agent that loops: model -> tool calls -> results -> model."""
+
+    def agent(task: Task) -> AgentOutput:
+        env = make_env(task)
+        tools = {t.name: t for t in env.tools()}
+        schemas = [t.schema() for t in tools.values()]
+        messages: list[Message] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": task.prompt},
+        ]
+        transcript: list[Message] = [dict(m) for m in messages]
+        actions: list[str] = []
+        api_calls = 0
+        tokens = 0
+        final = ""
+
+        for _ in range(max_steps):
+            reply = chat(messages, schemas)
+            api_calls += 1
+            tokens += reply.tokens
+            assistant: Message = {"role": "assistant", "content": reply.content}
+            if reply.tool_calls:
+                assistant["tool_calls"] = [
+                    {"function": {"name": c.name, "arguments": c.arguments}}
+                    for c in reply.tool_calls
+                ]
+            messages.append(assistant)
+            transcript.append(assistant)
+            if not reply.tool_calls:
+                final = reply.content
+                break
+            for call in reply.tool_calls:
+                actions.append(call.name)
+                result = call_tool(tools, call.name, call.arguments)
+                tool_msg: Message = {"role": "tool", "tool_name": call.name, "content": result}
+                messages.append(tool_msg)
+                transcript.append(tool_msg)
+        else:
+            transcript.append({"role": "system", "content": f"stopped after {max_steps} steps"})
+
+        confidence = None
+        if ask_confidence:
+            question = CONFIDENCE_PROMPT.format(question=task.prompt, answer=final)
+            conf_reply = chat([{"role": "user", "content": question}], [])
+            api_calls += 1
+            tokens += conf_reply.tokens
+            transcript.append({"role": "confidence", "content": conf_reply.content})
+            confidence = parse_confidence(conf_reply.content)
+
+        return AgentOutput(
+            text=final,
+            confidence=confidence,
+            actions=actions,
+            api_calls=api_calls,
+            tokens=tokens,
+            transcript=transcript,
+            is_correct=env.success(final),
+        )
+
+    return agent

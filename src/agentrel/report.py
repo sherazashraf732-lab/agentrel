@@ -25,6 +25,10 @@ from agentrel.metrics.predictability import (
     calibration_predictability,
 )
 from agentrel.metrics.robustness import accuracy, robustness_ratio
+from agentrel.metrics.trajectory import (
+    trajectory_distribution_consistency,
+    trajectory_sequence_consistency,
+)
 
 
 class ReliabilityReport(BaseModel):
@@ -34,6 +38,8 @@ class ReliabilityReport(BaseModel):
     accuracy: float
 
     consistency_outcome: float
+    consistency_trajectory_distribution: float | None = None
+    consistency_trajectory_sequence: float | None = None
     consistency_resource: float
     consistency: float
 
@@ -62,11 +68,17 @@ def build_report(
     prompt_runs: Sequence[RunRecord] | None = None,
 ) -> ReliabilityReport:
     """Compute every available metric and the paper's aggregates."""
-    notes = ["trajectory consistency not measured (needs tool-call logs)"]
+    notes: list[str] = []
 
     c_out = outcome_consistency(baseline)
     c_res = resource_consistency(baseline)
-    consistency = statistics.fmean([c_out, c_res])
+    c_traj_d = trajectory_distribution_consistency(baseline)
+    c_traj_s = trajectory_sequence_consistency(baseline)
+    c_traj = _mean_or_none([c_traj_d, c_traj_s])
+    if c_traj is None:
+        notes.append("trajectory consistency not measured (agent reported no tool calls)")
+    # Paper eq. (1): R_Con = mean(C_out, C_traj, C_res), C_traj = mean(d, s)
+    consistency = statistics.fmean(v for v in (c_out, c_traj, c_res) if v is not None)
 
     has_confidence = any(r.confidence is not None for r in baseline)
     if has_confidence:
@@ -94,6 +106,8 @@ def build_report(
         n_runs=len(baseline),
         accuracy=accuracy(baseline),
         consistency_outcome=c_out,
+        consistency_trajectory_distribution=c_traj_d,
+        consistency_trajectory_sequence=c_traj_s,
         consistency_resource=c_res,
         consistency=consistency,
         predictability_brier=brier,
@@ -122,6 +136,8 @@ def format_report(report: ReliabilityReport) -> str:
         "",
         f"Consistency                {_fmt(report.consistency)}",
         f"  outcome                  {_fmt(report.consistency_outcome)}",
+        f"  trajectory (tools used)  {_fmt(report.consistency_trajectory_distribution)}",
+        f"  trajectory (tool order)  {_fmt(report.consistency_trajectory_sequence)}",
         f"  resource                 {_fmt(report.consistency_resource)}",
         f"Predictability (Brier)     {_fmt(report.predictability)}",
         f"  calibration              {_fmt(report.predictability_calibration)}",

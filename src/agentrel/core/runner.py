@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -30,6 +31,14 @@ class AgentOutput(BaseModel):
 
     text: str
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    # Optional extras for tool-using agents (all default to "not reported").
+    actions: list[str] = Field(default_factory=list)  # tool names, in call order
+    api_calls: int | None = None  # model calls made
+    tokens: int | None = None  # tokens used
+    transcript: list[dict[str, Any]] = Field(default_factory=list)  # every message
+    # Set when the agent's environment grades success itself (e.g. final
+    # database state); otherwise the runner compares `text` to the answer.
+    is_correct: bool | None = None
 
 
 class RunRecord(BaseModel):
@@ -44,6 +53,10 @@ class RunRecord(BaseModel):
     is_correct: bool
     duration_s: float
     error: str | None = None
+    actions: list[str] = Field(default_factory=list)
+    api_calls: int | None = None
+    tokens: int | None = None
+    transcript: list[dict[str, Any]] = Field(default_factory=list)
 
 
 Agent = Callable[[Task], AgentOutput]
@@ -85,14 +98,23 @@ def run_agent(
                 )
                 continue
 
+            is_correct = (
+                output.is_correct
+                if output.is_correct is not None
+                else _is_correct(output.text, task.correct_answer)
+            )
             records.append(
                 RunRecord(
                     task_id=task.id,
                     run_index=run_index,
                     output_text=output.text,
                     confidence=output.confidence,
-                    is_correct=_is_correct(output.text, task.correct_answer),
+                    is_correct=is_correct,
                     duration_s=time.perf_counter() - start,
+                    actions=output.actions,
+                    api_calls=output.api_calls,
+                    tokens=output.tokens,
+                    transcript=output.transcript,
                 )
             )
     return records
