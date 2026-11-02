@@ -54,7 +54,8 @@ Policy:
 3. Only pending orders can be cancelled.
 4. Only delivered orders can be refunded, and never for more than the price of the items being returned.
 5. Never change anything the customer did not ask for.
-Use the tools, then reply to the customer in one or two short sentences."""
+Use the tools. When you are done, write your message to the customer on a final
+line that starts with "Reply:" and keep it to one or two short sentences."""
 
 # Environment perturbation: same meaning, different surface.
 _FIELD_RENAMES = {"status": "order_state", "placed_on": "order_date", "items": "line_items",

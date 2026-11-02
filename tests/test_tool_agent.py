@@ -151,3 +151,19 @@ def test_parse_ollama_response() -> None:
     assert reply.content == ""
     assert reply.tool_calls == [ToolCall(name="get_order", arguments={"order_id": "A1"})]
     assert reply.tokens == 15
+
+
+def test_extract_reply_drops_reasoning() -> None:
+    from agentrel.agents.tool_agent import extract_reply
+
+    text = "Okay, the order was shipped? No, cancelled. Let me answer.\nReply: Your order A101 is cancelled."
+    assert extract_reply(text) == "Your order A101 is cancelled."
+    assert extract_reply("No marker here.") == "No marker here."
+    assert extract_reply("reply: lowercase works") == "lowercase works"
+
+
+def test_reasoning_cannot_fake_success() -> None:
+    # the word "shipped" only appears in the reasoning, not in the reply
+    out = agent_with(script(final="I think it shipped... not sure.\nReply: I can't find that order."))(TASK)
+    assert out.text == "I can't find that order."
+    assert out.is_correct is False

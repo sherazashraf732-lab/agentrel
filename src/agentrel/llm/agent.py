@@ -41,13 +41,18 @@ def strip_thinking(text: str) -> str:
 
 
 def parse_confidence(text: str) -> float | None:
-    """Confidence as a 0-1 value: a 'N%' number wins, else the first number
-    after removing scale phrases. Values above 1 are read as percent."""
+    """Confidence as a 0-1 value: the last 'N%' wins, else the last number
+    after removing scale phrases (models that think out loud state their
+    verdict at the end). Values above 1 are read as percent."""
     cleaned = _SCALE.sub(" ", strip_thinking(text))
-    match = _PERCENT.search(cleaned) or _NUMBER.search(cleaned)
-    if match is None:
-        return None
-    value = float(match.group(1) if match.re is _PERCENT else match.group())
+    percents = _PERCENT.findall(cleaned)
+    if percents:
+        value = float(percents[-1])
+    else:
+        numbers = _NUMBER.findall(cleaned)
+        if not numbers:
+            return None
+        value = float(numbers[-1])
     if value > 1.0:
         value /= 100.0
     return min(max(value, 0.0), 1.0)

@@ -44,6 +44,22 @@ class Environment(Protocol):
     def success(self, final_answer: str) -> bool: ...
 
 
+REPLY_MARKER = "Reply:"
+
+
+def extract_reply(text: str) -> str:
+    """Customer-facing part of a final message.
+
+    Small local models often think out loud even with thinking disabled. The
+    system prompt asks them to put the customer reply after 'Reply:'; we keep
+    only what follows the last marker, so reasoning never reaches grading.
+    """
+    index = text.casefold().rfind(REPLY_MARKER.casefold())
+    if index == -1:
+        return text.strip()
+    return text[index + len(REPLY_MARKER):].strip()
+
+
 def call_tool(tools: dict[str, Tool], name: str, arguments: dict[str, Any]) -> str:
     """Run one tool. Errors are returned to the model as text, like a real API."""
     tool = tools.get(name)
@@ -92,7 +108,7 @@ def make_tool_agent(
             messages.append(assistant)
             transcript.append(assistant)
             if not reply.tool_calls:
-                final = reply.content
+                final = extract_reply(reply.content)
                 break
             for call in reply.tool_calls:
                 actions.append(call.name)

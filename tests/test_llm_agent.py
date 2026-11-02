@@ -63,6 +63,7 @@ def test_thinking_is_stripped_from_answer() -> None:
         ("I'm 0% confident", 0.0),
         ("Step 1 done. I am 70% sure", 0.7),
         ("95 out of 100", 0.95),
+        ("Order A101 was cancelled in step 3, so I'd say 85", 0.85),
     ],
 )
 def test_parse_confidence(reply: str, expected: float | None) -> None:
