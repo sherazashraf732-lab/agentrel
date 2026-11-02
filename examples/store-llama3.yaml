@@ -1,0 +1,9 @@
+# Paper protocol on the TechMart store with a fast local model (no reasoning
+# text), about 1 minute per scenario run on a CPU-only laptop.
+# Needs: ollama pull llama3.2:3b
+name: llama3.2-3b-store
+model: ollama/llama3.2:3b
+environment: store
+n_runs: 2
+fault_probability: 0.2
+output_dir: agentrel-results/llama3.2-3b-store

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from agentrel.core.runner import Agent, AgentOutput, Task
@@ -72,6 +72,50 @@ def call_tool(tools: dict[str, Tool], name: str, arguments: dict[str, Any]) -> s
     return result if isinstance(result, str) else json.dumps(result, default=str)
 
 
+@dataclass
+class Turn:
+    final: str = ""
+    actions: list[str] = field(default_factory=list)
+    api_calls: int = 0
+    tokens: int = 0
+    transcript: list[Message] = field(default_factory=list)
+
+
+def run_turn(
+    chat: ChatFn, tools: dict[str, Tool], messages: list[Message], max_steps: int = 8
+) -> Turn:
+    """One agent turn: call the model, run its tools, repeat until it replies.
+
+    `messages` is extended in place, so a caller can keep a multi-turn
+    conversation going (the website chat does this).
+    """
+    schemas = [t.schema() for t in tools.values()]
+    turn = Turn()
+    for _ in range(max_steps):
+        reply = chat(messages, schemas)
+        turn.api_calls += 1
+        turn.tokens += reply.tokens
+        assistant: Message = {"role": "assistant", "content": reply.content}
+        if reply.tool_calls:
+            assistant["tool_calls"] = [
+                {"function": {"name": c.name, "arguments": c.arguments}}
+                for c in reply.tool_calls
+            ]
+        messages.append(assistant)
+        turn.transcript.append(assistant)
+        if not reply.tool_calls:
+            turn.final = extract_reply(reply.content)
+            return turn
+        for call in reply.tool_calls:
+            turn.actions.append(call.name)
+            result = call_tool(tools, call.name, call.arguments)
+            tool_msg: Message = {"role": "tool", "tool_name": call.name, "content": result}
+            messages.append(tool_msg)
+            turn.transcript.append(tool_msg)
+    turn.transcript.append({"role": "system", "content": f"stopped after {max_steps} steps"})
+    return turn
+
+
 def make_tool_agent(
     chat: ChatFn,
     make_env: Callable[[Task], Environment],
@@ -84,40 +128,15 @@ def make_tool_agent(
     def agent(task: Task) -> AgentOutput:
         env = make_env(task)
         tools = {t.name: t for t in env.tools()}
-        schemas = [t.schema() for t in tools.values()]
         messages: list[Message] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": task.prompt},
         ]
         transcript: list[Message] = [dict(m) for m in messages]
-        actions: list[str] = []
-        api_calls = 0
-        tokens = 0
-        final = ""
-
-        for _ in range(max_steps):
-            reply = chat(messages, schemas)
-            api_calls += 1
-            tokens += reply.tokens
-            assistant: Message = {"role": "assistant", "content": reply.content}
-            if reply.tool_calls:
-                assistant["tool_calls"] = [
-                    {"function": {"name": c.name, "arguments": c.arguments}}
-                    for c in reply.tool_calls
-                ]
-            messages.append(assistant)
-            transcript.append(assistant)
-            if not reply.tool_calls:
-                final = extract_reply(reply.content)
-                break
-            for call in reply.tool_calls:
-                actions.append(call.name)
-                result = call_tool(tools, call.name, call.arguments)
-                tool_msg: Message = {"role": "tool", "tool_name": call.name, "content": result}
-                messages.append(tool_msg)
-                transcript.append(tool_msg)
-        else:
-            transcript.append({"role": "system", "content": f"stopped after {max_steps} steps"})
+        turn = run_turn(chat, tools, messages, max_steps)
+        transcript.extend(turn.transcript)
+        final, actions = turn.final, turn.actions
+        api_calls, tokens = turn.api_calls, turn.tokens
 
         confidence = None
         if ask_confidence:

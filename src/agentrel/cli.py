@@ -37,3 +37,18 @@ def run(
     if min_overall is not None and (report.overall is None or report.overall < min_overall):
         typer.echo(f"FAIL: overall reliability below {min_overall}", err=True)
         raise typer.Exit(code=1)
+
+
+@app.command()
+def serve(
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    results_dir: Path = Path("agentrel-results"),
+) -> None:
+    """Start the website: TechMart store chat and reliability dashboard."""
+    import uvicorn
+
+    from agentrel.web.app import create_app
+
+    typer.echo(f"Open http://{host}:{port}  (dashboard: http://{host}:{port}/dashboard)")
+    uvicorn.run(create_app(results_dir=results_dir), host=host, port=port)

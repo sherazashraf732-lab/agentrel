@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TechMart Support</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand">TechMart <span>AI customer support (local model via Ollama)</span></div>
+  <nav><a href="/dashboard">Reliability dashboard</a></nav>
+</header>
+<main class="grid">
+  <aside>
+    <section class="panel">
+      <h2>Demo customers</h2>
+      <p class="muted" style="margin-top:0">Use these details so the agent can verify you.</p>
+      <table id="customers"><tr><th>Name</th><th>Email</th><th>Zip</th></tr></table>
+    </section>
+    <section class="panel">
+      <h2>Orders (live database)</h2>
+      <table id="orders"></table>
+    </section>
+    <section class="panel">
+      <h2>Settings</h2>
+      <div class="row">
+        <select id="model">
+          <option value="llama3.2:3b">llama3.2:3b (fast)</option>
+          <option value="qwen3:4b">qwen3:4b (slow, reasons)</option>
+          <option value="llama3.2:1b">llama3.2:1b</option>
+        </select>
+        <button class="secondary" id="reset" type="button">New conversation</button>
+      </div>
+    </section>
+  </aside>
+  <section class="panel chat">
+    <div class="log" id="log">
+      <div class="msg agent">Hi! I'm the TechMart assistant. I can check, cancel or refund your orders. Try: "I'm Ali (ali@example.com, zip 54000). Cancel my order A101."</div>
+    </div>
+    <form id="form">
+      <input type="text" id="input" placeholder="Write to the store agent..." autocomplete="off" required>
+      <button id="send">Send</button>
+    </form>
+  </section>
+</main>
+<script>
+let sessionId = null;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+
+function renderOrders(orders) {
+  const rows = Object.entries(orders).map(([id, o]) => {
+    const cls = o.status === "cancelled" ? "bad" : o.status === "delivered" ? "good" : "";
+    return `<tr><td class="mono">${id}</td><td>${esc(o.customer_id)}</td>
+      <td><span class="tag ${cls}">${o.status}</span></td>
+      <td>$${o.total.toFixed(2)}</td><td>${o.refunded ? "$" + o.refunded.toFixed(2) : ""}</td></tr>`;
+  });
+  $("orders").innerHTML = "<tr><th>Order</th><th>Cust.</th><th>Status</th><th>Total</th><th>Refunded</th></tr>" + rows.join("");
+}
+
+function renderSteps(steps) {
+  const parts = steps.map((s) => {
+    if (s.role === "assistant" && s.tool_calls) {
+      const calls = s.tool_calls.map((c) => `${c.function.name}(${JSON.stringify(c.function.arguments)})`).join("\n");
+      return `<div class="step"><div class="who">model called tool</div><pre>${esc(calls)}</pre>${s.content ? `<pre class="muted">${esc(s.content)}</pre>` : ""}</div>`;
+    }
+    if (s.role === "tool") {
+      return `<div class="step"><div class="who">tool result: ${esc(s.tool_name)}</div><pre>${esc(s.content)}</pre></div>`;
+    }
+    return `<div class="step"><div class="who">${esc(s.role)} (raw model text)</div><pre>${esc(s.content || "")}</pre></div>`;
+  });
+  return `<details class="steps"><summary>Agent steps (${steps.length})</summary>${parts.join("")}</details>`;
+}
+
+function add(cls, html) {
+  const div = document.createElement("div");
+  div.className = "msg " + cls;
+  div.innerHTML = html;
+  $("log").appendChild(div);
+  $("log").scrollTop = $("log").scrollHeight;
+  return div;
+}
+
+async function loadStore() {
+  const data = await (await fetch("/api/store" + (sessionId ? "?session_id=" + sessionId : ""))).json();
+  $("customers").innerHTML = "<tr><th>Name</th><th>Email</th><th>Zip</th></tr>" +
+    data.customers.map((c) => `<tr><td>${esc(c.name)}</td><td class="mono">${esc(c.email)}</td><td>${c.zip}</td></tr>`).join("");
+  renderOrders(data.orders);
+}
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = $("input").value.trim();
+  if (!text) return;
+  add("user", esc(text));
+  $("input").value = "";
+  $("send").disabled = true;
+  const waiting = add("agent", '<span class="muted">Thinking (a local model on CPU can take 10-60 s)...</span>');
+  try {
+    const res = await fetch("/api/chat", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({message: text, session_id: sessionId, model: $("model").value})});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    sessionId = data.session_id;
+    const warn = data.violations.length
+      ? `<div style="margin-top:8px">${data.violations.map((v) => `<span class="tag bad">${esc(v.constraint)} (${v.severity})</span>`).join(" ")}</div>` : "";
+    waiting.innerHTML = esc(data.reply) + warn + renderSteps(data.steps);
+    renderOrders(data.orders);
+  } catch (err) {
+    waiting.className = "msg error";
+    waiting.textContent = "Error: " + err.message + " (is Ollama running?)";
+  } finally {
+    $("send").disabled = false;
+    $("input").focus();
+  }
+});
+
+$("reset").addEventListener("click", () => {
+  sessionId = null;
+  $("log").innerHTML = '<div class="msg agent">New conversation started. How can I help?</div>';
+  loadStore();
+});
+
+loadStore();
+</script>
+</body>
+</html>

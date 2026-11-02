@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agentrel Dashboard</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand">agentrel <span>reliability dashboard (Rabanser et al., ICML 2026)</span></div>
+  <nav><a href="/">TechMart store</a></nav>
+</header>
+<main class="grid">
+  <aside>
+    <section class="panel">
+      <h2>New evaluation</h2>
+      <p class="muted" style="margin-top:0">Runs the TechMart store agent through the paper's protocol: repeated runs, tool faults, changed tool formats and paraphrased requests.</p>
+      <div class="row" style="margin-bottom:8px">
+        <select id="model">
+          <option value="llama3.2:3b">llama3.2:3b</option>
+          <option value="qwen3:4b">qwen3:4b</option>
+          <option value="llama3.2:1b">llama3.2:1b</option>
+        </select>
+        <label>runs <input type="number" id="runs" value="1" min="1" max="5" style="width:60px"></label>
+      </div>
+      <button id="start">Start</button>
+      <p class="muted" style="font-size:13px">About 1 minute per scenario run with llama3.2:3b on CPU.</p>
+      <div id="jobs"></div>
+    </section>
+    <section class="panel">
+      <h2>Reports</h2>
+      <div id="reports" class="muted">Loading...</div>
+    </section>
+  </aside>
+  <section>
+    <div class="panel" id="detail"><p class="muted">Select a report.</p></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const fmt = (v) => v === null || v === undefined ? "n/a" : v.toFixed(2);
+let current = null;
+
+function card(label, value, subs = []) {
+  const pct = value === null || value === undefined ? 0 : Math.round(value * 100);
+  return `<div class="metric"><div class="label">${label}</div><div class="value">${fmt(value)}</div>
+    <div class="bar"><i style="width:${pct}%"></i></div>
+    ${subs.map(([n, v]) => `<div class="sub"><span>${n}</span><span>${fmt(v)}</span></div>`).join("")}</div>`;
+}
+
+function runsTable(kind, runs) {
+  const rows = runs.map((r, i) => `<tr class="run" data-kind="${kind}" data-i="${i}">
+      <td>${esc(r.task_id)}</td><td>${r.run_index}</td>
+      <td>${r.is_correct ? '<span class="tag good">pass</span>' : '<span class="tag bad">fail</span>'}</td>
+      <td>${r.confidence === null ? "n/a" : r.confidence.toFixed(2)}</td>
+      <td class="mono">${esc((r.actions || []).join(" > "))}</td>
+      <td>${(r.violations || []).map((v) => `<span class="tag bad">${esc(v.constraint)}</span>`).join(" ")}</td>
+      <td>${r.duration_s.toFixed(0)}s</td></tr>
+      <tr id="t-${kind}-${i}" hidden><td colspan="7"></td></tr>`);
+  return `<table><tr><th>Task</th><th>Run</th><th>Result</th><th>Conf.</th><th>Tools</th><th>Safety</th><th>Time</th></tr>${rows.join("")}</table>`;
+}
+
+function transcript(r) {
+  if (r.error) return `<div class="step"><div class="who">error</div><pre>${esc(r.error)}</pre></div>`;
+  return (r.transcript || []).map((m) => {
+    let body = m.content || "";
+    if (m.tool_calls) body = m.tool_calls.map((c) => `${c.function.name}(${JSON.stringify(c.function.arguments)})`).join("\n") + (body ? "\n\n" + body : "");
+    const who = m.role === "tool" ? `tool result: ${m.tool_name}` : m.role;
+    return `<div class="step"><div class="who">${esc(who)}</div><pre>${esc(body)}</pre></div>`;
+  }).join("") + `<p class="muted">Final reply: ${esc(r.output_text)}</p>`;
+}
+
+async function showReport(name) {
+  current = name;
+  document.querySelectorAll(".list-item").forEach((el) => el.classList.toggle("active", el.dataset.name === name));
+  const {report: r, runs} = await (await fetch("/api/evaluations/" + encodeURIComponent(name))).json();
+  const kinds = Object.keys(runs);
+  $("detail").innerHTML = `<h2>${esc(r.agent_name)}</h2>
+    <p class="muted">${r.n_tasks} tasks, ${r.n_runs} baseline runs, accuracy ${(r.accuracy * 100).toFixed(0)}%</p>
+    <div class="metrics">
+      ${card("Overall reliability", r.overall)}
+      ${card("Consistency", r.consistency, [["outcome", r.consistency_outcome], ["tools used", r.consistency_trajectory_distribution], ["tool order", r.consistency_trajectory_sequence], ["resources", r.consistency_resource]])}
+      ${card("Predictability (Brier)", r.predictability, [["calibration", r.predictability_calibration], ["discrimination", r.predictability_auroc]])}
+      ${card("Robustness", r.robustness, [["faults", r.robustness_fault], ["environment", r.robustness_env], ["prompt", r.robustness_prompt]])}
+      ${card("Safety (separate)", r.safety, [["compliance", r.safety_compliance], ["harm severity", r.safety_harm],
+        ...Object.entries(r.violations_by_constraint || {}).map(([k, v]) => [k, v])])}
+    </div>
+    ${r.notes.length ? `<p class="muted">Notes: ${r.notes.map(esc).join("; ")}</p>` : ""}
+    <h2 style="margin-top:20px">Runs and every model reply</h2>
+    <div class="tabs">${kinds.map((k, i) => `<button class="${i ? "" : "active"}" data-kind="${k}">${k} (${runs[k].length})</button>`).join("")}</div>
+    <div id="runs">${runsTable(kinds[0], runs[kinds[0]])}</div>`;
+  $("detail").querySelectorAll(".tabs button").forEach((b) => b.onclick = () => {
+    $("detail").querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("active", x === b));
+    $("runs").innerHTML = runsTable(b.dataset.kind, runs[b.dataset.kind]);
+  });
+  $("detail").addEventListener("click", (e) => {
+    const tr = e.target.closest("tr.run");
+    if (!tr) return;
+    const row = $(`t-${tr.dataset.kind}-${tr.dataset.i}`);
+    row.hidden = !row.hidden;
+    if (!row.hidden) row.firstElementChild.innerHTML = transcript(runs[tr.dataset.kind][+tr.dataset.i]);
+  });
+}
+
+async function refresh() {
+  const data = await (await fetch("/api/evaluations")).json();
+  $("jobs").innerHTML = data.jobs.map((j) => `<div class="sub" style="margin-top:6px"><span>${esc(j.model)} (${esc(j.started)})</span>
+    <span class="tag ${j.status === "done" ? "good" : j.status === "failed" ? "bad" : "warn"}">${j.status}</span></div>
+    ${j.error ? `<p class="muted">${esc(j.error)}</p>` : ""}`).join("");
+  $("reports").innerHTML = data.reports.length ? data.reports.map((r) => `<div class="list-item" data-name="${esc(r.name)}">
+    <strong>${esc(r.agent)}</strong><div class="sub"><span>overall ${fmt(r.overall)}</span><span>safety ${fmt(r.safety)}</span></div></div>`).join("")
+    : "No reports yet. Start an evaluation.";
+  document.querySelectorAll(".list-item").forEach((el) => {
+    el.onclick = () => showReport(el.dataset.name);
+    el.classList.toggle("active", el.dataset.name === current);
+  });
+  if (data.jobs.some((j) => j.status === "running")) setTimeout(refresh, 5000);
+}
+
+$("start").onclick = async () => {
+  $("start").disabled = true;
+  await fetch("/api/evaluations", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({model: $("model").value, n_runs: +$("runs").value})});
+  $("start").disabled = false;
+  refresh();
+};
+
+refresh();
+</script>
+</body>
+</html>

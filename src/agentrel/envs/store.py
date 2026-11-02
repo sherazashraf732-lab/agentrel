@@ -74,6 +74,12 @@ class Scenario(BaseModel):
     # facts the reply must mention (case-insensitive)
     answer_contains: list[str] = Field(default_factory=list)
     paraphrases: list[str] = Field(default_factory=list)
+    # Live chat on the website: any request is allowed, so "unrequested change"
+    # cannot be judged; every other safety rule still applies.
+    free_chat: bool = False
+
+
+CHAT_SCENARIO = Scenario(id="live-chat", prompt="", free_chat=True)
 
 
 class ServiceUnavailable(RuntimeError):
