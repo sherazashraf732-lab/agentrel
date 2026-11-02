@@ -113,3 +113,19 @@ def test_save_and_load_roundtrip(tmp_path: Path) -> None:
     path = tmp_path / "runs.jsonl"
     save_records(records, path)
     assert load_records(path) == records
+
+@pytest.mark.parametrize("text", ["paris", "PARIS", "Paris.", " Paris! "])
+def test_correctness_ignores_case_and_trailing_punctuation(text: str) -> None:
+    def agent(task: Task) -> AgentOutput:
+        return AgentOutput(text=text)
+
+    task = [Task(id="t", prompt="Capital of France?", correct_answer="Paris")]
+    assert run_agent(agent, task, n_runs=1)[0].is_correct
+
+
+def test_different_answer_still_wrong() -> None:
+    def agent(task: Task) -> AgentOutput:
+        return AgentOutput(text="Lyon")
+
+    task = [Task(id="t", prompt="Capital of France?", correct_answer="Paris")]
+    assert not run_agent(agent, task, n_runs=1)[0].is_correct

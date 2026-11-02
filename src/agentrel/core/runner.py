@@ -49,9 +49,13 @@ class RunRecord(BaseModel):
 Agent = Callable[[Task], AgentOutput]
 
 
+def _normalize(text: str) -> str:
+    return text.strip().rstrip(".!").strip().casefold()
+
+
 def _is_correct(output: str, expected: str) -> bool:
-    """Exact match after trimming whitespace. A smarter judge comes later."""
-    return output.strip() == expected.strip()
+    """Match ignoring case, surrounding whitespace and a trailing '.' or '!'."""
+    return _normalize(output) == _normalize(expected)
 
 
 def run_agent(
