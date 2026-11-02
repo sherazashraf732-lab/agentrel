@@ -49,6 +49,7 @@ class ReliabilityReport(BaseModel):
     predictability: float | None
 
     robustness_fault: float | None
+    robustness_env: float | None = None
     robustness_prompt: float | None
     robustness: float | None
 
@@ -66,6 +67,7 @@ def build_report(
     baseline: Sequence[RunRecord],
     fault_runs: Sequence[RunRecord] | None = None,
     prompt_runs: Sequence[RunRecord] | None = None,
+    env_runs: Sequence[RunRecord] | None = None,
 ) -> ReliabilityReport:
     """Compute every available metric and the paper's aggregates."""
     notes: list[str] = []
@@ -97,8 +99,11 @@ def build_report(
         notes.append("fault robustness not measured")
     if not prompt_runs:
         notes.append("prompt robustness not measured")
-    notes.append("environment robustness not measured (needs tool interfaces)")
-    robustness = _mean_or_none([r_fault, r_prompt])
+    r_env = robustness_ratio(baseline, env_runs) if env_runs else None
+    if not env_runs:
+        notes.append("environment robustness not measured (needs a tool environment)")
+    # Paper eq. (3): R_Rob = mean(R_fault, R_env, R_prompt)
+    robustness = _mean_or_none([r_fault, r_env, r_prompt])
 
     return ReliabilityReport(
         agent_name=agent_name,
@@ -115,6 +120,7 @@ def build_report(
         predictability_auroc=auroc,
         predictability=brier,
         robustness_fault=r_fault,
+        robustness_env=r_env,
         robustness_prompt=r_prompt,
         robustness=robustness,
         overall=_mean_or_none([consistency, brier, robustness]),
@@ -144,6 +150,7 @@ def format_report(report: ReliabilityReport) -> str:
         f"  discrimination (AUROC)   {_fmt(report.predictability_auroc)}",
         f"Robustness                 {_fmt(report.robustness)}",
         f"  fault                    {_fmt(report.robustness_fault)}",
+        f"  environment              {_fmt(report.robustness_env)}",
         f"  prompt                   {_fmt(report.robustness_prompt)}",
         "-" * 44,
         f"Overall reliability        {_fmt(report.overall)}",

@@ -27,7 +27,8 @@ def config(**overrides: object) -> RunConfig:
 
 def test_example_configs_are_valid() -> None:
     for path in EXAMPLES.glob("*.yaml"):
-        assert load_config(path).tasks
+        cfg = load_config(path)
+        assert cfg.tasks or cfg.environment
 
 
 def test_config_rejects_empty_tasks() -> None:
