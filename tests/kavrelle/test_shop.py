@@ -51,20 +51,20 @@ def _set_stock(db: Session, slug: str, label: str, n: int) -> None:
 
 def test_same_item_merges_into_one_line(db: Session) -> None:
     token = shop.create_cart(db).token
-    shop.add_item(db, token, "tech-fleece-hoodie", "L", 1)
-    cart = shop.add_item(db, token, "tech-fleece-hoodie", "L", 2)
+    shop.add_item(db, token, "floral-print-shirt", "L", 1)
+    cart = shop.add_item(db, token, "floral-print-shirt", "L", 2)
     assert len(cart.items) == 1 and cart.items[0].quantity == 3
-    assert shop.cart_total_cents(cart) == 3 * 9897
+    assert shop.cart_total_cents(cart) == 3 * 5900
 
 
 @pytest.mark.parametrize(
     ("slug", "variant", "qty", "error"),
     [
         ("no-such-product", "L", 1, shop.NotFound),
-        ("tech-fleece-hoodie", "XXXL", 1, shop.NotFound),
-        ("tech-fleece-hoodie", "L", 0, shop.Invalid),
-        ("tech-fleece-hoodie", "L", 11, shop.Invalid),
-        ("tech-fleece-hoodie", "L", -3, shop.Invalid),
+        ("floral-print-shirt", "XXXL", 1, shop.NotFound),
+        ("floral-print-shirt", "L", 0, shop.Invalid),
+        ("floral-print-shirt", "L", 11, shop.Invalid),
+        ("floral-print-shirt", "L", -3, shop.Invalid),
     ],
 )
 def test_bad_additions_are_refused(
@@ -76,11 +76,11 @@ def test_bad_additions_are_refused(
 
 
 def test_cannot_add_more_than_stock(db: Session) -> None:
-    _set_stock(db, "air-runner-2", "42", 2)
+    _set_stock(db, "street-sneaker", "42", 2)
     token = shop.create_cart(db).token
-    shop.add_item(db, token, "air-runner-2", "42", 2)
+    shop.add_item(db, token, "street-sneaker", "42", 2)
     with pytest.raises(shop.Conflict, match="Only 2 left"):
-        shop.add_item(db, token, "air-runner-2", "42", 1)
+        shop.add_item(db, token, "street-sneaker", "42", 1)
 
 
 def test_merged_line_cannot_pass_the_limit(db: Session) -> None:
@@ -119,16 +119,16 @@ def test_unknown_cart(db: Session) -> None:
 
 def test_checkout_creates_order_takes_stock_and_empties_cart(db: Session) -> None:
     token = shop.create_cart(db).token
-    shop.add_item(db, token, "tech-fleece-hoodie", "L", 2)
+    shop.add_item(db, token, "floral-print-shirt", "L", 2)
     shop.add_item(db, token, "mouse-pad", "L", 1)
-    before = _stock(db, "tech-fleece-hoodie", "L")
+    before = _stock(db, "floral-print-shirt", "L")
     order = shop.checkout(db, token, BUYER)
     db.commit()
     assert order.status == "pending"
-    assert order.total_cents == 2 * 9897 + 1000
+    assert order.total_cents == 2 * 5900 + 1000
     assert order.code.startswith("K") and len(order.code) == 8
     assert order.customer.email == "zara@example.com"
-    assert _stock(db, "tech-fleece-hoodie", "L") == before - 2
+    assert _stock(db, "floral-print-shirt", "L") == before - 2
     assert shop.get_cart(db, token).items == []
 
 
@@ -174,17 +174,17 @@ def test_cannot_check_out_as_someone_else(db: Session) -> None:
 
 
 def test_two_shoppers_cannot_oversell_the_last_items(db: Session) -> None:
-    _set_stock(db, "trail-pro-gtx", "44", 3)
+    _set_stock(db, "clean-low-top", "44", 3)
     first, second = shop.create_cart(db).token, shop.create_cart(db).token
-    shop.add_item(db, first, "trail-pro-gtx", "44", 2)
-    shop.add_item(db, second, "trail-pro-gtx", "44", 2)
+    shop.add_item(db, first, "clean-low-top", "44", 2)
+    shop.add_item(db, second, "clean-low-top", "44", 2)
     db.commit()
     shop.checkout(db, first, BUYER)
     db.commit()
     with pytest.raises(shop.Conflict, match="sold out"):
         shop.checkout(db, second, shop.Buyer("Omar", "omar@example.com", "54000"))
     db.rollback()
-    assert _stock(db, "trail-pro-gtx", "44") == 1
+    assert _stock(db, "clean-low-top", "44") == 1
     assert len(shop.get_cart(db, second).items) == 1, (
         "failed checkout must leave the cart intact"
     )

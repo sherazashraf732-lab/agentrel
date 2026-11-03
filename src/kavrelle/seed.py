@@ -37,10 +37,19 @@ def seed(session: Session) -> SeedResult:
             if product is None:
                 product = Product(slug=p["slug"], name=p["name"], color=p["color"],
                                   price_cents=p["price_cents"], variant_label=p["variant_label"],
+                                  description=p["description"], image_url=p["image_url"],
+                                  image_credit=p["image_credit"],
                                   variants=[Variant(label=v, stock=catalog.DEFAULT_STOCK)
                                             for v in p["variants"]])  # fmt: skip
                 shop.products.append(product)
                 added["products"] += 1
+            elif product.image_url is None and p["image_url"]:
+                # Older databases: fill in photos without touching prices or stock.
+                product.image_url, product.image_credit = (
+                    p["image_url"],
+                    p["image_credit"],
+                )
+                product.description = product.description or p["description"]
             products_by_slug[p["slug"]] = product
 
     customers: dict[str, Customer] = {}

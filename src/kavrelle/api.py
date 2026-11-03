@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
+from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session, selectinload, sessionmaker
@@ -24,6 +26,7 @@ class VariantOut(BaseModel):
 class ProductOut(BaseModel):
     slug: str
     name: str
+    description: str
     color: str
     price_cents: int
     currency: str
@@ -49,6 +52,18 @@ class ShopDetail(BaseModel):
     floor: int
     description: str
     products: list[ProductOut]
+
+
+class CatalogShop(ShopDetail):
+    position: int
+
+
+WEB_DIR = Path(__file__).parent / "web"
+CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; "
+    "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+)
 
 
 class CartLineOut(BaseModel):
@@ -133,7 +148,7 @@ _STATUS = {"not_found": 404, "invalid": 422, "conflict": 409}
 
 def _product_out(p: Product) -> ProductOut:
     return ProductOut(
-        slug=p.slug, name=p.name, color=p.color, price_cents=p.price_cents, currency=p.currency,
+        slug=p.slug, name=p.name, description=p.description, color=p.color, price_cents=p.price_cents, currency=p.currency,
         variant_label=p.variant_label, image_url=p.image_url, image_credit=p.image_credit,
         variants=[VariantOut(label=v.label, in_stock=v.stock > 0) for v in p.variants],
     )  # fmt: skip
@@ -152,6 +167,42 @@ def create_app(
     def get_session() -> Iterator[Session]:
         with factory() as session:
             yield session
+
+    @app.middleware("http")
+    async def security_headers(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        response.headers.setdefault("Content-Security-Policy", CSP)
+        if request.url.path.startswith("/api/"):
+            response.headers.setdefault("Cache-Control", "no-store")
+        return response
+
+    if WEB_DIR.is_dir():
+        app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
+
+        @app.get("/", include_in_schema=False)
+        def index() -> FileResponse:
+            return FileResponse(
+                WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"}
+            )
+
+    @app.get("/api/catalog", response_model=list[CatalogShop])
+    def catalog_all(session: Session = Depends(get_session)) -> list[CatalogShop]:  # noqa: B008
+        shops = session.scalars(
+            select(Shop)
+            .order_by(Shop.floor, Shop.position)
+            .options(selectinload(Shop.products).selectinload(Product.variants))
+        ).all()
+        return [
+            CatalogShop(slug=s.slug, name=s.name, category=s.category, floor=s.floor,
+                        position=s.position, description=s.description,
+                        products=[_product_out(p) for p in s.products if p.active])
+            for s in shops
+        ]  # fmt: skip
 
     @app.get("/api/health")
     def health() -> JSONResponse:

@@ -29,22 +29,22 @@ def token(client: TestClient) -> str:
 def test_full_shopping_journey(client: TestClient, token: str) -> None:
     r = client.post(
         f"/api/cart/{token}/items",
-        json={"product_slug": "tech-fleece-hoodie", "variant": "L"},
+        json={"product_slug": "floral-print-shirt", "variant": "L"},
     )
     assert r.status_code == 200 and r.json()["item_count"] == 1
     r = client.post(
         f"/api/cart/{token}/items",
-        json={"product_slug": "air-runner-2", "variant": "42", "quantity": 2},
+        json={"product_slug": "street-sneaker", "variant": "42", "quantity": 2},
     )
     cart = r.json()
-    assert cart["total_cents"] == 9897 + 2 * 12900 and cart["item_count"] == 3
-    shoe = next(i for i in cart["items"] if i["product_slug"] == "air-runner-2")
+    assert cart["total_cents"] == 5900 + 2 * 13900 and cart["item_count"] == 3
+    shoe = next(i for i in cart["items"] if i["product_slug"] == "street-sneaker")
     r = client.patch(f"/api/cart/{token}/items/{shoe['id']}", json={"quantity": 1})
-    assert r.json()["total_cents"] == 9897 + 12900
+    assert r.json()["total_cents"] == 5900 + 13900
     r = client.post(f"/api/cart/{token}/checkout", json=ZARA)
     assert r.status_code == 201
     order = r.json()
-    assert order["status"] == "pending" and order["total_cents"] == 9897 + 12900
+    assert order["status"] == "pending" and order["total_cents"] == 5900 + 13900
     assert client.get(f"/api/cart/{token}").json()["items"] == []
     r = client.post(
         f"/api/orders/{order['code']}/lookup",

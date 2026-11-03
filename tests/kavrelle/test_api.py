@@ -39,17 +39,17 @@ def test_shops_listed_in_mall_order(client: TestClient) -> None:
     assert [s["slug"] for s in shops] == [s["slug"] for s in sorted(
         catalog.SHOPS, key=lambda s: (s["floor"], s["position"]))]  # fmt: skip
     northline = next(s for s in shops if s["slug"] == "northline")
-    assert northline["product_count"] == 4
+    assert northline["product_count"] == 8
     assert next(s for s in shops if s["slug"] == "food-court")["product_count"] == 0
 
 
 def test_shop_detail_has_products_and_variants(client: TestClient) -> None:
     body = client.get("/api/shops/northline").json()
     assert body["name"] == "Northline"
-    hoodie = next(p for p in body["products"] if p["slug"] == "tech-fleece-hoodie")
-    assert hoodie["price_cents"] == 9897
-    assert [v["label"] for v in hoodie["variants"]] == catalog.SIZES
-    assert all(v["in_stock"] for v in hoodie["variants"])
+    shirt = next(p for p in body["products"] if p["slug"] == "floral-print-shirt")
+    assert shirt["price_cents"] == 5900
+    assert [v["label"] for v in shirt["variants"]] == catalog.SIZES
+    assert all(v["in_stock"] for v in shirt["variants"])
 
 
 def test_product_detail(client: TestClient) -> None:
