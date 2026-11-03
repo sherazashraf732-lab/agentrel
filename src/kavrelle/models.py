@@ -25,6 +25,7 @@ from kavrelle.db import Base
 
 ORDER_STATUSES = ("pending", "shipped", "delivered", "cancelled", "refunded")
 MESSAGE_ROLES = ("user", "assistant")
+MAX_LINE_QUANTITY = 10
 RUN_STATUSES = ("queued", "running", "done", "failed")
 SEVERITIES = ("low", "medium", "high")
 
@@ -277,3 +278,37 @@ class Violation(Base):
     detail: Mapped[str] = mapped_column(Text, default="")
 
     run: Mapped[EvalRun] = relationship(back_populates="violations")
+
+
+class Cart(Base):
+    __tablename__ = "carts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token: Mapped[str] = mapped_column(String(36), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    items: Mapped[list[CartItem]] = relationship(
+        back_populates="cart", cascade="all, delete-orphan", order_by="CartItem.id"
+    )
+
+
+class CartItem(Base):
+    __tablename__ = "cart_items"
+    __table_args__ = (
+        CheckConstraint(
+            f"quantity >= 1 AND quantity <= {MAX_LINE_QUANTITY}", name="quantity_range"
+        ),
+        UniqueConstraint("cart_id", "variant_id", name="uq_cart_items_cart_variant"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cart_id: Mapped[int] = mapped_column(
+        ForeignKey("carts.id", ondelete="CASCADE"), index=True
+    )
+    variant_id: Mapped[int] = mapped_column(
+        ForeignKey("variants.id", ondelete="CASCADE")
+    )
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+
+    cart: Mapped[Cart] = relationship(back_populates="items")
+    variant: Mapped[Variant] = relationship()

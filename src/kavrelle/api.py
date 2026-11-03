@@ -4,15 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
+from kavrelle import shop as rules
 from kavrelle.config import Settings
-from kavrelle.db import make_engine, make_session_factory, ping
-from kavrelle.models import Product, Shop
+from kavrelle.db import make_engine, make_session_factory, ping, session_scope
+from kavrelle.models import MAX_LINE_QUANTITY, Cart, Order, Product, Shop
 
 
 class VariantOut(BaseModel):
@@ -48,6 +49,86 @@ class ShopDetail(BaseModel):
     floor: int
     description: str
     products: list[ProductOut]
+
+
+class CartLineOut(BaseModel):
+    id: int
+    product_slug: str
+    name: str
+    variant: str
+    quantity: int
+    unit_price_cents: int
+    line_total_cents: int
+
+
+class CartOut(BaseModel):
+    token: str
+    items: list[CartLineOut]
+    total_cents: int
+    item_count: int
+
+
+class AddItemIn(BaseModel):
+    product_slug: str = Field(min_length=1, max_length=80)
+    variant: str = Field(min_length=1, max_length=40)
+    quantity: int = Field(default=1, ge=1, le=MAX_LINE_QUANTITY)
+
+
+class SetQuantityIn(BaseModel):
+    quantity: int = Field(ge=0, le=MAX_LINE_QUANTITY)
+
+
+class BuyerIn(BaseModel):
+    name: str = Field(max_length=200)
+    email: str = Field(max_length=200)
+    zip_code: str = Field(max_length=40)
+
+
+class IdentityIn(BaseModel):
+    email: str = Field(max_length=200)
+    zip_code: str = Field(max_length=40)
+
+
+class RefundIn(IdentityIn):
+    amount_cents: int
+
+
+class OrderItemOut(BaseModel):
+    name: str
+    variant: str
+    quantity: int
+    unit_price_cents: int
+
+
+class OrderOut(BaseModel):
+    code: str
+    status: str
+    total_cents: int
+    refunded_cents: int
+    items: list[OrderItemOut]
+
+
+def _cart_out(cart: Cart) -> CartOut:
+    lines = [
+        CartLineOut(id=i.id, product_slug=i.variant.product.slug, name=i.variant.product.name,
+                    variant=i.variant.label, quantity=i.quantity,
+                    unit_price_cents=i.variant.product.price_cents,
+                    line_total_cents=i.variant.product.price_cents * i.quantity)
+        for i in cart.items
+    ]  # fmt: skip
+    return CartOut(token=cart.token, items=lines, total_cents=rules.cart_total_cents(cart),
+                   item_count=sum(i.quantity for i in cart.items))  # fmt: skip
+
+
+def _order_out(order: Order) -> OrderOut:
+    return OrderOut(code=order.code, status=order.status, total_cents=order.total_cents,
+                    refunded_cents=order.refunded_cents,
+                    items=[OrderItemOut(name=i.product.name, variant=i.variant_label,
+                                        quantity=i.quantity, unit_price_cents=i.unit_price_cents)
+                           for i in order.items])  # fmt: skip
+
+
+_STATUS = {"not_found": 404, "invalid": 422, "conflict": 409}
 
 
 def _product_out(p: Product) -> ProductOut:
@@ -119,5 +200,63 @@ def create_app(
         if product is None:
             raise HTTPException(status_code=404, detail="Product not found")
         return _product_out(product)
+
+    @app.exception_handler(rules.ShopError)
+    def shop_error(_request: Request, exc: rules.ShopError) -> JSONResponse:
+        return JSONResponse({"detail": exc.message}, status_code=_STATUS[exc.kind])
+
+    @app.post("/api/cart", response_model=CartOut, status_code=201)
+    def new_cart() -> CartOut:
+        with session_scope(factory) as s:
+            return _cart_out(rules.create_cart(s))
+
+    @app.get("/api/cart/{token}", response_model=CartOut)
+    def read_cart(token: str) -> CartOut:
+        with session_scope(factory) as s:
+            return _cart_out(rules.get_cart(s, token))
+
+    @app.post("/api/cart/{token}/items", response_model=CartOut)
+    def add_to_cart(token: str, body: AddItemIn) -> CartOut:
+        with session_scope(factory) as s:
+            cart = rules.add_item(
+                s, token, body.product_slug, body.variant, body.quantity
+            )
+            return _cart_out(cart)
+
+    @app.patch("/api/cart/{token}/items/{item_id}", response_model=CartOut)
+    def change_line(token: str, item_id: int, body: SetQuantityIn) -> CartOut:
+        with session_scope(factory) as s:
+            return _cart_out(rules.set_quantity(s, token, item_id, body.quantity))
+
+    @app.delete("/api/cart/{token}/items/{item_id}", response_model=CartOut)
+    def remove_line(token: str, item_id: int) -> CartOut:
+        with session_scope(factory) as s:
+            return _cart_out(rules.set_quantity(s, token, item_id, 0))
+
+    @app.post("/api/cart/{token}/checkout", response_model=OrderOut, status_code=201)
+    def checkout(token: str, body: BuyerIn) -> OrderOut:
+        with session_scope(factory) as s:
+            order = rules.checkout(
+                s, token, rules.Buyer(body.name, body.email, body.zip_code)
+            )
+            return _order_out(order)
+
+    @app.post("/api/orders/{code}/lookup", response_model=OrderOut)
+    def lookup_order(code: str, body: IdentityIn) -> OrderOut:
+        with session_scope(factory) as s:
+            return _order_out(rules.find_order(s, code, body.email, body.zip_code))
+
+    @app.post("/api/orders/{code}/cancel", response_model=OrderOut)
+    def cancel(code: str, body: IdentityIn) -> OrderOut:
+        with session_scope(factory) as s:
+            return _order_out(rules.cancel_order(s, code, body.email, body.zip_code))
+
+    @app.post("/api/orders/{code}/refund", response_model=OrderOut)
+    def refund(code: str, body: RefundIn) -> OrderOut:
+        with session_scope(factory) as s:
+            order = rules.refund_order(
+                s, code, body.email, body.zip_code, body.amount_cents
+            )
+            return _order_out(order)
 
     return app
