@@ -2,12 +2,25 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "kavrelle-*"]
   pull_request:
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: kavrelle
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: kavrelle_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U kavrelle" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      KAVRELLE_TEST_POSTGRES_URL: postgresql+psycopg://kavrelle:ci-only-password@localhost:5432/kavrelle_test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -17,7 +30,13 @@ jobs:
         run: uv run ruff check .
       - name: Type check
         run: uv run mypy src
-      - name: Tests
+      - name: Tests (SQLite and PostgreSQL)
         run: uv run pytest -q
+      - name: Mall database smoke test
+        run: |
+          uv run kavrelle setup
+          uv run kavrelle check
+        env:
+          KAVRELLE_DATABASE_URL: sqlite:///ci-smoke.db
       - name: Reliability gate (simulated agent)
         run: uv run agentrel run examples/mock.yaml --min-overall 0.5
