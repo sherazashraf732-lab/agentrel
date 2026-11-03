@@ -1,6 +1,6 @@
 /* Kavrelle app: loads the catalogue, runs the 3D mall (or the grid fallback),
    and drives the product sheet, cart, checkout and order tracking.
-   Every user-visible string from the server goes through textContent (never innerHTML). */
+   Every user-visible string from the server goes through textContent (never as raw HTML). */
 (function () {
   "use strict";
   const { api, ApiError, Mall3D } = window.KV;
