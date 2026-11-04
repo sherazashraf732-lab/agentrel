@@ -43,22 +43,36 @@ OFFLINE_REPLY = (
     "an order from “Track order” at the top of the page."
 )
 SLOW_REPLY = "Sorry, that took too long on our side. Please send your message again."
+VAGUE = (
+    "reply to",
+    "i'd love to know",
+    "i'd be happy to help",
+    "how can i help",
+    "sure, i can help",
+)
 UNSURE_REPLY = "Sorry, I couldn’t finish that. Could you say it another way?"
 
 SYSTEM_PROMPT = """You are Kavrelle Support, the customer assistant of Kavrelle, a 3D shopping mall.
 You help with orders (status, cancellations, refunds) and with finding products.
 
-Rules you must always follow:
-1. Before discussing or changing any order, verify the customer with verify_customer(email, zip_code), unless the conversation says they are already verified.
-2. Only discuss or change orders that belong to the verified customer.
-3. Only pending orders can be cancelled.
-4. Only delivered orders can be refunded, and never for more than what is left to refund.
-5. Never invent order details: always use the tools.
-6. If a tool says NOT ALLOWED, explain politely to the customer and do not try another way.
-7. You are Kavrelle Support. Never say which AI model, company or technology you run on.
+How to work:
+- For any order question, first call verify_customer(email, zip_code) unless the customer is already verified.
+- Then call get_order, cancel_order or refund_order for the order they mention, and answer from the tool result.
+- For shopping questions call search_products and suggest what it finds.
 
-Be short, warm and clear (at most 3 sentences). Prices are in US dollars.
-Write the message for the customer on the final line, starting with "Reply:"."""
+Rules you must always follow:
+1. Only discuss or change orders that belong to the verified customer.
+2. Only pending orders can be cancelled. Only delivered orders can be refunded, never above what is left.
+3. Never invent order details. If a tool says NOT ALLOWED, explain kindly and stop.
+4. You are Kavrelle Support. Never say which AI model, company or technology you run on.
+
+Example:
+Customer: I'm jo@example.com, zip 11111. Where is order A9?
+You call verify_customer, then get_order with order_id A9, which says status shipped.
+Reply: Hi Jo! Your order A9 has shipped and is on its way.
+
+Speak directly to the customer, at most 3 short sentences, prices in US dollars.
+Always end with one line that starts with "Reply:" and contains your message to the customer."""
 
 VENDOR_RE = re.compile(
     r"\b(ollama|qwen\w*|llama[\w.:-]*|meta ai|openai|gpt-?\w*|anthropic|claude|mistral|gemma)\b",
@@ -108,6 +122,7 @@ class _Ctx:
     customer_id: int | None
     job: Job
     calls: list[tuple[str, dict[str, Any], str, bool]] = field(default_factory=list)
+    summary: str = ""  # what a person would say about the last tool result
 
 
 def _identity(s: Session, ctx: _Ctx) -> Customer | None:
@@ -118,9 +133,16 @@ def make_tools(ctx: _Ctx) -> dict[str, Tool]:
     """Website tools. Unlike the evaluation store, these ENFORCE the policy."""
 
     def record(
-        name: str, args: dict[str, Any], result: str, ok: bool, done: str | None = None
+        name: str,
+        args: dict[str, Any],
+        result: str,
+        ok: bool,
+        done: str | None = None,
+        say: str | None = None,
     ) -> str:
         ctx.calls.append((name, args, result, ok))
+        if say:
+            ctx.summary = say
         if ok and done and done not in ctx.job.done_steps:
             ctx.job.done_steps.append(done)
         return result
@@ -141,25 +163,28 @@ def make_tools(ctx: _Ctx) -> dict[str, Tool]:
                     args,
                     "No customer matches that email and zip code.",
                     False,
+                    say="I couldn't find an account with that email and zip code. Could you check them?",
                 )
             ctx.customer_id = c.id
             conv = s.get(Conversation, ctx.conversation_id)
             if conv is not None:
                 conv.customer_id = c.id
             orders = ", ".join(
-                f"{o.code} ({o.status})"
+                f"{o.code} is {o.status} (${o.total_cents / 100:.2f})"
                 for o in s.scalars(select(Order).where(Order.customer_id == c.id))
             )
+            first = c.name.split()[0]
             return record("verify_customer", args, f"Verified: {c.name}. Their orders: {orders or 'none'}.", True,
-                          "Identity confirmed")  # fmt: skip
+                          "Identity confirmed",
+                          say=f"Thanks {first}, you're verified. Your orders: {orders or 'none yet'}.")  # fmt: skip
 
     def _order_text(o: Order) -> str:
         items = "; ".join(
             f"{i.quantity} x {i.product.name} ({i.variant_label}) ${i.unit_price_cents / 100:.2f}"
             for i in o.items
         )
-        return (f"Order {o.code}: status {o.status}, total ${o.total_cents / 100:.2f}, "
-                f"refunded ${o.refunded_cents / 100:.2f}, items: {items}.")  # fmt: skip
+        return (f"Order {o.code} is {o.status}. Total ${o.total_cents / 100:.2f}, "
+                f"refunded ${o.refunded_cents / 100:.2f}. Items: {items}.")  # fmt: skip
 
     def _guarded(
         name: str,
@@ -178,15 +203,30 @@ def make_tools(ctx: _Ctx) -> dict[str, Tool]:
                     False,
                 )
             try:
-                return record(name, args, act(s, who), True, done)
+                result = act(s, who)
+                return record(
+                    name, args, result, True, done, say=result.removeprefix("Done. ")
+                )
             except shop.NotFound:
                 s.rollback()
                 msg = ("NOT ALLOWED: no order with that code belongs to this customer. "
                        "Say you can only help with their own orders; do not guess anything else.")  # fmt: skip
-                return record(name, args, msg, False)
+                return record(
+                    name,
+                    args,
+                    msg,
+                    False,
+                    say="I can only help with orders on your own account.",
+                )
             except shop.ShopError as e:
                 s.rollback()
-                return record(name, args, f"NOT ALLOWED: {e.message}", False)
+                return record(
+                    name,
+                    args,
+                    f"NOT ALLOWED: {e.message}",
+                    False,
+                    say=f"Sorry, I can't do that: {e.message}.",
+                )
 
     def oid(x: object) -> str:
         return str(x).strip().lstrip("#").upper()
@@ -388,7 +428,12 @@ class SupportDesk:
             turn = run_turn(
                 self.chat_factory(), make_tools(ctx), messages, self.max_steps
             )
-            reply = scrub(turn.final) or UNSURE_REPLY
+            final = scrub(turn.final)
+            # A small model sometimes stops without a usable answer: fall back to the facts.
+            usable = bool(final) and not (
+                final.lower().startswith(VAGUE) and len(final) < 60
+            )
+            reply = final if usable else (ctx.summary or UNSURE_REPLY)
             if time.monotonic() - job.created > self.timeout_s:
                 return  # the browser was already told it took too long
         except Exception:  # noqa: BLE001 - any model/network failure becomes a polite offline reply

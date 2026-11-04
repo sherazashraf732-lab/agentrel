@@ -300,3 +300,28 @@ def test_live_model_cancels_a_pending_order(seeded: Engine) -> None:
     )
     for word in ["llama", "ollama", "meta"]:
         assert word not in (first["reply"] + other["reply"]).lower()
+
+
+def test_empty_model_answer_falls_back_to_the_facts(seeded: Engine) -> None:
+    c = _client(
+        seeded,
+        scripted(
+            [("verify_customer", ALI)], [("get_order", {"order_id": "A100"})], "Reply:"
+        ),
+    )
+    out = ask(c, "ali@example.com 54000 where is A100?")
+    assert out["reply"].startswith("Order A100 is shipped.")
+
+
+def test_vague_model_answer_is_replaced_by_the_facts(seeded: Engine) -> None:
+    c = _client(
+        seeded,
+        scripted(
+            [("verify_customer", ALI)], "Reply: I'd be happy to help you with that."
+        ),
+    )
+    out = ask(c, "ali@example.com 54000 - cancel A100 now!")
+    assert (
+        out["reply"].startswith("Thanks Ali, you're verified.")
+        and "A100 is shipped" in out["reply"]
+    )
