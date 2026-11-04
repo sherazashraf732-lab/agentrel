@@ -9,8 +9,8 @@ violation are saved so the admin console can chart and audit them.
 from __future__ import annotations
 
 import json
-import logging
 import math
+import logging
 import threading
 import time
 from collections import defaultdict
@@ -125,8 +125,12 @@ def save_run(
 def import_results_dir(
     session: Session, folder: Path, name: str, label: str
 ) -> EvalRun:
-    """Load a finished `agentrel run` output folder (report.json + <condition>.jsonl)."""
-    report = json.loads((folder / "report.json").read_text("utf-8"))
+    """Load a finished `agentrel run` output folder (<condition>.jsonl files).
+
+    The report is recomputed from the raw runs with the current metric code, so a run
+    recorded earlier is scored exactly like a new one. report.json is only a fallback
+    when the raw runs are missing.
+    """
     runs: dict[str, list[dict[str, Any]]] = {}
     for cond in CONDITIONS:
         f = folder / f"{cond}.jsonl"
@@ -136,9 +140,32 @@ def import_results_dir(
                 for line in f.read_text("utf-8").splitlines()
                 if line.strip()
             ]
+    if runs.get("baseline"):
+        report = recompute_report(label, runs)
+    else:
+        report = json.loads((folder / "report.json").read_text("utf-8"))
+        report["agent_name"] = label
     if session.scalar(select(EvalRun).where(EvalRun.name == name)) is not None:
         raise ValueError(f"a run named {name!r} already exists")
     return save_run(session, name=name, label=label, report=report, runs=runs)
+
+
+def recompute_report(
+    label: str, runs: dict[str, list[dict[str, Any]]]
+) -> dict[str, Any]:
+    """The paper's metrics from raw run records (agentrel.report.build_report)."""
+    from agentrel.core.runner import RunRecord
+    from agentrel.report import build_report
+
+    parsed = {k: [RunRecord.model_validate(r) for r in v] for k, v in runs.items() if v}
+    report = build_report(
+        label,
+        parsed["baseline"],
+        fault_runs=parsed.get("fault"),
+        prompt_runs=parsed.get("prompt"),
+        env_runs=parsed.get("environment"),
+    )
+    return report.model_dump()
 
 
 Evaluator = Callable[

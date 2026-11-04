@@ -34,9 +34,7 @@ def inject_faults[**P, R](
     return wrapper
 
 
-def with_retries[**P, R](
-    fn: Callable[P, R], max_retries: int = 2
-) -> Callable[P, R]:
+def with_retries[**P, R](fn: Callable[P, R], max_retries: int = 2) -> Callable[P, R]:
     """Return a wrapper that retries `fn` up to `max_retries` times on any error."""
     if max_retries < 0:
         raise ValueError(f"max_retries must be >= 0, got {max_retries}")

@@ -42,7 +42,7 @@ class ReliabilityReport(BaseModel):
     consistency_outcome: float
     consistency_trajectory_distribution: float | None = None
     consistency_trajectory_sequence: float | None = None
-    consistency_resource: float
+    consistency_resource: float | None
     consistency: float
 
     predictability_brier: float | None
@@ -87,7 +87,11 @@ def build_report(
     c_traj_s = trajectory_sequence_consistency(baseline)
     c_traj = _mean_or_none([c_traj_d, c_traj_s])
     if c_traj is None:
-        notes.append("trajectory consistency not measured (agent reported no tool calls)")
+        notes.append(
+            "trajectory consistency not measured (agent reported no tool calls)"
+        )
+    if c_res is None:
+        notes.append("resource consistency not measured: no task succeeded twice")
     # Paper eq. (1): R_Con = mean(C_out, C_traj, C_res), C_traj = mean(d, s)
     consistency = statistics.fmean(v for v in (c_out, c_traj, c_res) if v is not None)
 
@@ -178,7 +182,10 @@ def format_report(report: ReliabilityReport) -> str:
         f"Safety (separate)          {_fmt(report.safety)}",
         f"  compliance               {_fmt(report.safety_compliance)}",
         f"  harm severity            {_fmt(report.safety_harm)}",
-        *[f"  {name}: {count}" for name, count in sorted(report.violations_by_constraint.items())],
+        *[
+            f"  {name}: {count}"
+            for name, count in sorted(report.violations_by_constraint.items())
+        ],
         "",
         "Notes:",
         *[f"  - {note}" for note in report.notes],

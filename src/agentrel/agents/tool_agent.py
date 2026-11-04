@@ -57,7 +57,7 @@ def extract_reply(text: str) -> str:
     index = text.casefold().rfind(REPLY_MARKER.casefold())
     if index == -1:
         return text.strip()
-    return text[index + len(REPLY_MARKER):].strip()
+    return text[index + len(REPLY_MARKER) :].strip()
 
 
 def call_tool(tools: dict[str, Tool], name: str, arguments: dict[str, Any]) -> str:
@@ -109,10 +109,16 @@ def run_turn(
         for call in reply.tool_calls:
             turn.actions.append(call.name)
             result = call_tool(tools, call.name, call.arguments)
-            tool_msg: Message = {"role": "tool", "tool_name": call.name, "content": result}
+            tool_msg: Message = {
+                "role": "tool",
+                "tool_name": call.name,
+                "content": result,
+            }
             messages.append(tool_msg)
             turn.transcript.append(tool_msg)
-    turn.transcript.append({"role": "system", "content": f"stopped after {max_steps} steps"})
+    turn.transcript.append(
+        {"role": "system", "content": f"stopped after {max_steps} steps"}
+    )
     return turn
 
 

@@ -13,7 +13,9 @@ from agentrel.llm.ollama import (
 )
 from agentrel.report import build_report
 
-TASK = Task(id="t1", prompt="What is the status of order A100?", correct_answer="shipped")
+TASK = Task(
+    id="t1", prompt="What is the status of order A100?", correct_answer="shipped"
+)
 
 
 class OrderEnv:
@@ -56,7 +58,11 @@ class ScriptedChat:
 def script(final: str = "Order A100 has shipped.", conf: str = "90") -> ScriptedChat:
     return ScriptedChat(
         [
-            ChatReply(content="", tool_calls=[ToolCall(name="get_order", arguments={"order_id": "A100"})], tokens=50),
+            ChatReply(
+                content="",
+                tool_calls=[ToolCall(name="get_order", arguments={"order_id": "A100"})],
+                tokens=50,
+            ),
             ChatReply(content=final, tokens=30),
             ChatReply(content=conf, tokens=5),
         ]
@@ -64,7 +70,9 @@ def script(final: str = "Order A100 has shipped.", conf: str = "90") -> Scripted
 
 
 def agent_with(chat: ScriptedChat) -> Any:
-    return make_tool_agent(chat, lambda task: OrderEnv(), system_prompt="You are a store agent.")
+    return make_tool_agent(
+        chat, lambda task: OrderEnv(), system_prompt="You are a store agent."
+    )
 
 
 def test_agent_calls_tool_and_answers() -> None:
@@ -110,7 +118,13 @@ def test_wrong_final_answer_fails() -> None:
 
 def test_stops_after_max_steps() -> None:
     looping = ScriptedChat(
-        [ChatReply(content="", tool_calls=[ToolCall(name="get_order", arguments={"order_id": "A100"})])] * 3
+        [
+            ChatReply(
+                content="",
+                tool_calls=[ToolCall(name="get_order", arguments={"order_id": "A100"})],
+            )
+        ]
+        * 3
         + [ChatReply(content="50")]
     )
     agent = make_tool_agent(looping, lambda t: OrderEnv(), "sys", max_steps=3)
@@ -142,14 +156,18 @@ def test_parse_ollama_response() -> None:
     data = {
         "message": {
             "content": "<think>hmm</think>",
-            "tool_calls": [{"function": {"name": "get_order", "arguments": {"order_id": "A1"}}}],
+            "tool_calls": [
+                {"function": {"name": "get_order", "arguments": {"order_id": "A1"}}}
+            ],
         },
         "prompt_eval_count": 10,
         "eval_count": 5,
     }
     reply = parse_ollama_response(data)
     assert reply.content == ""
-    assert reply.tool_calls == [ToolCall(name="get_order", arguments={"order_id": "A1"})]
+    assert reply.tool_calls == [
+        ToolCall(name="get_order", arguments={"order_id": "A1"})
+    ]
     assert reply.tokens == 15
 
 
@@ -164,6 +182,8 @@ def test_extract_reply_drops_reasoning() -> None:
 
 def test_reasoning_cannot_fake_success() -> None:
     # the word "shipped" only appears in the reasoning, not in the reply
-    out = agent_with(script(final="I think it shipped... not sure.\nReply: I can't find that order."))(TASK)
+    out = agent_with(
+        script(final="I think it shipped... not sure.\nReply: I can't find that order.")
+    )(TASK)
     assert out.text == "I can't find that order."
     assert out.is_correct is False

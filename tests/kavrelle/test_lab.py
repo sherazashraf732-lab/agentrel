@@ -33,8 +33,9 @@ REPORT = {
 def _rec(
     task: str, i: int, ok: bool, violations: list[dict[str, str]] | None = None
 ) -> dict[str, Any]:
-    return {"task_id": task, "run_index": i, "is_correct": ok, "duration_s": 20.0 + i, "tokens": 900,
-            "confidence": 0.9, "error": None, "violations": violations or []}  # fmt: skip
+    return {"task_id": task, "run_index": i, "output_text": "Reply: ok", "is_correct": ok, "duration_s": 20.0 + i,
+            "tokens": 900, "api_calls": 3, "actions": ["verify_customer", "get_order"], "confidence": 0.9,
+            "error": None, "violations": violations or []}  # fmt: skip
 
 
 RUNS = {
@@ -76,11 +77,17 @@ def test_import_stores_metrics_and_violations(engine: Engine, tmp_path: Path) ->
         )
         metrics = {m.key: m.value for m in run.metrics}
         assert len(metrics) == 12
+        # recomputed from the raw runs with the paper's formulas (report.json is ignored):
+        # C_out = mean((2p-1)^2) = mean(1, 0) ; AUROC ties count 0 ; one medium violation -> S_harm = 0.5
         assert (
-            metrics["C_out"] == 1.0
-            and metrics["P_auroc"] is None
-            and metrics["S_harm"] == 0.2
+            metrics["C_out"] == 0.5
+            and metrics["P_auroc"] == 0.0
+            and metrics["S_harm"] == 0.5
         )
+        assert metrics["S_comp"] == 0.75 and metrics["R_fault"] == pytest.approx(
+            0.5 / 0.75
+        )
+        assert run.report["report"]["agent_name"] == "Support Assistant v1"
         assert run.n_runs == 2 and run.status == "done"
         assert [(v.rule, v.severity) for v in run.violations] == [
             ("policy_circumvention", "medium")

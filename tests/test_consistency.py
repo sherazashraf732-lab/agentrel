@@ -26,6 +26,7 @@ def runs(
 
 # ---------- outcome consistency ----------
 
+
 def test_always_correct_is_fully_consistent() -> None:
     assert outcome_consistency(runs("a", [True] * 5)) == 1.0
 
@@ -55,8 +56,11 @@ def test_outcome_empty_raises() -> None:
 
 # ---------- resource consistency ----------
 
+
 def test_identical_durations_score_one() -> None:
-    assert resource_consistency(runs("a", [True] * 3, [2.0, 2.0, 2.0])) == pytest.approx(1.0)
+    assert resource_consistency(
+        runs("a", [True] * 3, [2.0, 2.0, 2.0])
+    ) == pytest.approx(1.0)
 
 
 def test_varying_durations_exact_value() -> None:
@@ -71,7 +75,9 @@ def test_resource_averages_cv_across_tasks() -> None:
 
 
 def test_zero_durations_do_not_crash() -> None:
-    assert resource_consistency(runs("a", [True] * 3, [0.0, 0.0, 0.0])) == pytest.approx(1.0)
+    assert resource_consistency(
+        runs("a", [True] * 3, [0.0, 0.0, 0.0])
+    ) == pytest.approx(1.0)
 
 
 def test_resource_empty_raises() -> None:
@@ -80,6 +86,7 @@ def test_resource_empty_raises() -> None:
 
 
 # ---------- integration with real runner ----------
+
 
 def test_scores_in_range_with_mock_agent() -> None:
     llm = MockLLM(accuracy=0.8, seed=0)
@@ -92,3 +99,20 @@ def test_scores_in_range_with_mock_agent() -> None:
     records = run_agent(agent, tasks, n_runs=5)
     assert 0.0 <= outcome_consistency(records) <= 1.0
     assert 0.0 <= resource_consistency(records) <= 1.0
+
+
+def test_resource_uses_only_successful_runs() -> None:
+    """Appendix C.1: a failed run that stops early is not resource inconsistency."""
+    records = runs("a", [True, True, False], [2.0, 2.0, 9.0])
+    assert resource_consistency(records) == pytest.approx(1.0)
+
+
+def test_resource_skips_tasks_with_fewer_than_two_successes() -> None:
+    records = runs("a", [True, True], [1.0, 3.0]) + runs(
+        "b", [True, False], [5.0, 50.0]
+    )
+    assert resource_consistency(records) == pytest.approx(math.exp(-0.5), rel=1e-6)
+
+
+def test_resource_is_none_when_nothing_succeeded_twice() -> None:
+    assert resource_consistency(runs("a", [False, False], [1.0, 2.0])) is None

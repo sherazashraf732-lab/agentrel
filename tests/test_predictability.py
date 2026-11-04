@@ -25,6 +25,7 @@ def recs(pairs: list[tuple[float | None, bool]]) -> list[RunRecord]:
 
 # ---------- Brier ----------
 
+
 def test_brier_perfect() -> None:
     assert brier_predictability(recs([(1.0, True), (0.0, False)])) == 1.0
 
@@ -48,6 +49,7 @@ def test_no_confidence_at_all_raises() -> None:
 
 
 # ---------- Calibration ----------
+
 
 def test_calibration_well_calibrated() -> None:
     records = recs([(0.8, True)] * 8 + [(0.8, False)] * 2)
@@ -75,6 +77,7 @@ def test_calibration_invalid_bins_raises() -> None:
 
 
 # ---------- AUROC ----------
+
 
 def test_auroc_perfect_separation() -> None:
     records = recs([(0.9, True), (0.8, True), (0.2, False), (0.1, False)])
@@ -106,6 +109,7 @@ def test_auroc_undefined_when_all_wrong() -> None:
 
 
 # ---------- integration ----------
+
 
 def test_mock_agent_is_informative_but_miscalibrated() -> None:
     llm = MockLLM(accuracy=0.5, seed=0)

@@ -78,13 +78,18 @@ def create_app(
     def store_state(session_id: str | None = None) -> dict[str, Any]:
         session = sessions.get(session_id or "")
         orders = session.env.orders if session else StoreEnv(CHAT_SCENARIO).orders
-        demo = [{"name": c["name"], "email": c["email"], "zip": c["zip"]} for c in CUSTOMERS.values()]
+        demo = [
+            {"name": c["name"], "email": c["email"], "zip": c["zip"]}
+            for c in CUSTOMERS.values()
+        ]
         return {"orders": orders, "customers": demo}
 
     @app.post("/api/chat")
     def chat(body: ChatIn) -> dict[str, Any]:
         with lock:
-            session_id = body.session_id if body.session_id in sessions else uuid.uuid4().hex
+            session_id = (
+                body.session_id if body.session_id in sessions else uuid.uuid4().hex
+            )
             session = sessions.setdefault(session_id, Session())
         session.messages.append({"role": "user", "content": body.message})
         tools = {t.name: t for t in session.env.tools()}
@@ -122,8 +127,12 @@ def create_app(
     @app.post("/api/evaluations")
     def start_evaluation(body: EvalIn) -> dict[str, Any]:
         job_id = uuid.uuid4().hex[:8]
-        jobs[job_id] = {"id": job_id, "status": "running", "model": body.model,
-                        "started": datetime.now().isoformat(timespec="seconds")}
+        jobs[job_id] = {
+            "id": job_id,
+            "status": "running",
+            "model": body.model,
+            "started": datetime.now().isoformat(timespec="seconds"),
+        }
         threading.Thread(target=_run_job, args=(job_id, body), daemon=True).start()
         return jobs[job_id]
 
@@ -133,9 +142,15 @@ def create_app(
         if results_dir.exists():
             for path in sorted(results_dir.glob("*/report.json"), reverse=True):
                 data = json.loads(path.read_text(encoding="utf-8"))
-                reports.append({"name": path.parent.name, "agent": data.get("agent_name"),
-                                "overall": data.get("overall"), "safety": data.get("safety"),
-                                "accuracy": data.get("accuracy")})
+                reports.append(
+                    {
+                        "name": path.parent.name,
+                        "agent": data.get("agent_name"),
+                        "overall": data.get("overall"),
+                        "safety": data.get("safety"),
+                        "accuracy": data.get("accuracy"),
+                    }
+                )
         return {"jobs": list(jobs.values()), "reports": reports}
 
     @app.get("/api/evaluations/{name}")

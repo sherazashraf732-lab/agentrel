@@ -24,6 +24,7 @@ def recs(outcomes: list[bool]) -> list[RunRecord]:
 
 # ---------- metrics ----------
 
+
 def test_accuracy() -> None:
     assert accuracy(recs([True, True, False, False])) == 0.5
 
@@ -50,6 +51,7 @@ def test_ratio_undefined_when_baseline_zero() -> None:
 
 
 # ---------- fault injection ----------
+
 
 def echo(x: str) -> str:
     return x
@@ -107,6 +109,7 @@ def test_invalid_retries_raises() -> None:
 
 # ---------- integration: retries improve fault robustness ----------
 
+
 def make_agent(call: Callable[[str], str]) -> Callable[[Task], AgentOutput]:
     def agent(task: Task) -> AgentOutput:
         return AgentOutput(text=call(task.correct_answer))
@@ -131,6 +134,7 @@ def test_retries_improve_fault_robustness() -> None:
 
 
 # ---------- prompt paraphrases ----------
+
 
 def test_paraphrased_tasks_keep_id_and_answer() -> None:
     tasks = [Task(id="t1", prompt="2+2?", correct_answer="4")]

@@ -24,12 +24,17 @@ def tools_of(env: StoreEnv) -> dict:
 
 # ---------- tools ----------
 
+
 def test_verify_customer() -> None:
     env = StoreEnv(CANCEL)
     tools = tools_of(env)
-    assert "C1" in call_tool(tools, "verify_customer", {"email": "ali@example.com", "zip": "54000"})
+    assert "C1" in call_tool(
+        tools, "verify_customer", {"email": "ali@example.com", "zip": "54000"}
+    )
     assert env.verified == "C1"
-    assert "ERROR" in call_tool(tools, "verify_customer", {"email": "x@y.z", "zip": "1"})
+    assert "ERROR" in call_tool(
+        tools, "verify_customer", {"email": "x@y.z", "zip": "1"}
+    )
 
 
 def test_cancel_changes_state_and_logs() -> None:
@@ -59,6 +64,7 @@ def test_each_env_is_a_fresh_copy() -> None:
 
 # ---------- grading ----------
 
+
 def test_success_requires_exact_final_state() -> None:
     env = StoreEnv(CANCEL)
     assert not env.success("done")
@@ -75,6 +81,7 @@ def test_success_requires_facts_in_reply() -> None:
 
 
 # ---------- perturbations ----------
+
 
 def test_environment_perturbation_renames_and_reformats() -> None:
     env = StoreEnv(CANCEL, perturbed=True)
@@ -97,7 +104,10 @@ def test_tool_faults() -> None:
 def test_fault_rate_roughly_p() -> None:
     env = StoreEnv(CANCEL, fault_probability=0.2, rng=random.Random(5))
     tools = tools_of(env)
-    errors = sum("503" in call_tool(tools, "get_order", {"order_id": "A100"}) for _ in range(1000))
+    errors = sum(
+        "503" in call_tool(tools, "get_order", {"order_id": "A100"})
+        for _ in range(1000)
+    )
     assert abs(errors / 1000 - 0.2) < 0.04
 
 
@@ -109,6 +119,7 @@ def test_factory_gives_fresh_env_per_run() -> None:
 
 # ---------- agent in the store ----------
 
+
 class Script:
     def __init__(self, replies: list[ChatReply]) -> None:
         self.replies = list(replies)
@@ -118,13 +129,25 @@ class Script:
 
 
 def cancel_script(param: str = "order_id") -> Script:
-    return Script([
-        ChatReply(content="", tool_calls=[ToolCall(name="verify_customer",
-                  arguments={"email": "ali@example.com", "zip": "54000"})]),
-        ChatReply(content="", tool_calls=[ToolCall(name="cancel_order", arguments={param: "A101"})]),
-        ChatReply(content="Your order A101 is cancelled."),
-        ChatReply(content="95"),
-    ])
+    return Script(
+        [
+            ChatReply(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        name="verify_customer",
+                        arguments={"email": "ali@example.com", "zip": "54000"},
+                    )
+                ],
+            ),
+            ChatReply(
+                content="",
+                tool_calls=[ToolCall(name="cancel_order", arguments={param: "A101"})],
+            ),
+            ChatReply(content="Your order A101 is cancelled."),
+            ChatReply(content="95"),
+        ]
+    )
 
 
 def test_scripted_agent_completes_cancel() -> None:
@@ -150,8 +173,13 @@ def test_evaluate_store_with_do_nothing_model() -> None:
     def lazy(messages: list[Message], tools: list[ToolSchema]) -> ChatReply:
         return ChatReply(content="Sorry, I can't help with that.", tokens=10)
 
-    cfg = RunConfig(name="lazy", model="ollama/x", environment="store", n_runs=2,
-                    fault_probability=0.2)
+    cfg = RunConfig(
+        name="lazy",
+        model="ollama/x",
+        environment="store",
+        n_runs=2,
+        fault_probability=0.2,
+    )
     report, runs = evaluate_store(cfg, chat=lazy)
     assert set(runs) == {"baseline", "environment", "fault", "prompt"}
     # doing nothing is correct only where the right answer is to change nothing
