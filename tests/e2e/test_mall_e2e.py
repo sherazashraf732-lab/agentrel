@@ -11,8 +11,8 @@ import re
 import socket
 import threading
 import time
-from email import message_from_bytes, policy
 from collections.abc import Iterator
+from email import message_from_bytes, policy
 from pathlib import Path
 
 import pytest
@@ -27,9 +27,9 @@ from sqlalchemy import select, update
 from agentrel.llm.ollama import ChatReply, ToolCall
 from kavrelle import migrate
 from kavrelle.api import create_app
-from kavrelle.mailer import Mailer
 from kavrelle.config import Settings
 from kavrelle.db import make_engine, make_session_factory, session_scope
+from kavrelle.mailer import Mailer
 from kavrelle.models import Customer, Product, Variant
 from kavrelle.seed import seed
 
