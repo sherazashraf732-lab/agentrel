@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Contact | Kavrelle</title>
+<meta name="description" content="Send the Kavrelle team a message.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@800;900&display=swap">
+<link rel="stylesheet" href="/static/pages.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23e2552d'/%3E%3Ctext x='16' y='23' font-family='Arial' font-weight='900' font-size='20' text-anchor='middle' fill='white'%3EK%3C/text%3E%3C/svg%3E">
+</head>
+<body data-page="contact">
+<header class="top">
+  <a class="brand" href="/" aria-label="Kavrelle home"><span class="mark" aria-hidden="true">K</span><span class="wordmark">KAVREL<span>LE</span></span></a>
+  <a class="btn" href="/">← Back to the mall</a>
+</header>
+<main class="page">
+<div class="hero"><p class="kicker">Contact</p><h1>Write to us.</h1><p class="lede">We reply by email, usually within two working days. For order questions, include your order code.</p></div>
+<div class="split">
+<form class="card form" id="contactForm" novalidate>
+  <div class="field"><label for="cName">Your name</label><input id="cName" autocomplete="name" maxlength="80" required><div class="err" id="cNameErr"></div></div>
+  <div class="field"><label for="cEmail">Email</label><input id="cEmail" type="email" autocomplete="email" maxlength="160" required><div class="err" id="cEmailErr"></div></div>
+  <div class="field"><label for="cTopic">Topic</label><select id="cTopic" required><option value="">Choose a topic</option><option value="order">An order</option><option value="returns">Returns &amp; refunds</option><option value="account">My account</option><option value="privacy">Privacy &amp; my data</option><option value="other">Something else</option></select><div class="err" id="cTopicErr"></div></div>
+  <div class="field"><label for="cMsg">Message</label><textarea id="cMsg" rows="6" maxlength="3000" required></textarea><div class="count" id="cCount">0 / 3000</div><div class="err" id="cMsgErr"></div></div>
+  <div class="hp" aria-hidden="true"><label for="cWebsite">Leave this empty</label><input id="cWebsite" tabindex="-1" autocomplete="off"></div>
+  <p class="small">We use these details only to answer you. See our <a href="/privacy">Privacy Policy</a>.</p>
+  <p class="form-error" id="cError" role="alert" hidden></p>
+  <button class="btn primary" type="submit" id="cSubmit">Send message</button>
+</form>
+<div class="card done" id="contactDone" hidden role="status" tabindex="-1"><div class="tick" aria-hidden="true">✓</div><h2>Message sent</h2><p>Thanks! A copy is on its way to your inbox, and we will reply to the same address.</p><a class="btn" href="/">Back to the mall</a></div>
+<aside class="aside"><h2>Faster answers</h2><ul><li><strong>Track or cancel an order:</strong> use “Track order” in the mall.</li><li><strong>Common questions:</strong> see <a href="/help">Help &amp; FAQ</a>.</li><li><strong>Your data:</strong> choose the topic “Privacy &amp; my data” to see, correct or delete it.</li></ul></aside>
+</div>
+</main>
+<footer class="foot">
+  <nav aria-label="Site links">
+    <a href="/help">Help &amp; FAQ</a><a href="/contact">Contact</a><a href="/about">About</a><a href="/terms">Terms of Service</a><a href="/privacy">Privacy Policy</a>
+  </nav>
+  <p>Kavrelle is a demonstration store built as a portfolio project. No payment is taken and nothing is shipped.</p>
+</footer>
+<script src="/static/js/pages.js"></script>
+</body>
+</html>

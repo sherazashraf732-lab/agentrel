@@ -358,3 +358,14 @@ dialog::backdrop { background: rgba(31, 26, 22, 0.45); backdrop-filter: blur(3px
 .chat-form .btn { width: 46px; padding: 0; border-radius: 50%; }
 body.mode-3d-hint .controls-hint { right: 200px; }
 @media (max-width: 640px) { .chat { height: calc(100% - 100px); } .chat-fab .label { display: none; } }
+
+/* ---------- site links, consent ---------- */
+.dir-foot { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 10px 16px 14px; border-top: 1px solid var(--line); font-size: 12px; }
+.dir-foot a, .site-foot a, .hint-text a, .check a { color: var(--ink-2); text-decoration: underline; text-underline-offset: 2px; }
+.dir-foot a:hover, .site-foot a:hover { color: var(--accent); }
+.site-foot { margin-top: 56px; padding: 28px 0 8px; border-top: 1px solid var(--line); display: grid; gap: 12px; color: var(--muted); font-size: 13px; }
+.site-foot .wordmark { font: 900 20px/1 var(--display); color: var(--ink); }
+.site-foot nav { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.site-foot p { margin: 0; }
+.check { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--ink-2); cursor: pointer; }
+.check input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--accent); flex: none; }

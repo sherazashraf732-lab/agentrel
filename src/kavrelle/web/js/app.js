@@ -115,6 +115,11 @@
       }
       root.append(sec);
     }
+    root.append(h("footer", { class: "site-foot" },
+      h("div", { class: "wordmark", text: "KAVRELLE" }),
+      h("nav", { "aria-label": "Site links" }, ...[["Help & FAQ", "/help"], ["Contact", "/contact"], ["About", "/about"],
+        ["Terms", "/terms"], ["Privacy", "/privacy"]].map(([t, href]) => h("a", { href, text: t }))),
+      h("p", { text: "A demonstration store. No payment is taken and nothing is shipped." })));
   }
 
   // ---------- navigation ----------
@@ -580,11 +585,13 @@
       ["suEmail", "suEmailErr", (v) => (EMAIL_RE.test(v.trim()) ? "" : "Please enter a valid email.")],
       ["suZip", "suZipErr", (v) => (ZIP_RE.test(v.trim()) ? "" : "3 to 12 letters or numbers.")],
       ["suPass", "suPassErr", PW_RULE]])) return;
+    if (!$("suTerms").checked) { $("suTermsErr").textContent = "Please accept the Terms and Privacy Policy."; $("suTerms").focus(); return; }
+    $("suTermsErr").textContent = "";
     busy($("suSubmit"), async () => {
       hideError("suError");
       try {
         setMe(await api.signup({ name: $("suName").value.trim(), email: $("suEmail").value.trim(),
-          zip_code: $("suZip").value.trim(), password: $("suPass").value }));
+          zip_code: $("suZip").value.trim(), password: $("suPass").value, accept_terms: true }));
         $("suPass").value = ""; $("authDlg").close();
         toast(`Account created. Welcome, ${state.me.name.split(" ")[0]}!`);
       } catch (err) { showError("suError", err.message); }

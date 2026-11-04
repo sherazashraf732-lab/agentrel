@@ -143,7 +143,10 @@ def test_wrong_identity_is_not_verified(seeded: Engine) -> None:
 def test_signed_in_customer_is_already_verified(seeded: Engine) -> None:
     fake = scripted([("cancel_order", {"order_id": "A101"})], "Reply: Cancelled.")
     c = _client(seeded, fake)
-    c.post("/api/auth/signup", json={"name": "Ali", **ALI, "password": "orders2026x"})
+    c.post(
+        "/api/auth/signup",
+        json={"name": "Ali", **ALI, "password": "orders2026x", "accept_terms": True},
+    )
     ask(c, "Cancel A101")
     assert _status(seeded, "A101") == "cancelled"
     assert any("verified as Ali" in m["content"] for m in fake.seen[0])  # type: ignore[attr-defined]

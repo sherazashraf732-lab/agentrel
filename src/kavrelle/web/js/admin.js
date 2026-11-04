@@ -65,21 +65,23 @@
   const heat = (v) => (v === undefined ? "#f1e6d6" : `hsl(${Math.round(v * 130)}, 55%, ${88 - v * 18}%)`);
 
   // ---------- views ----------
+  const VIEWS = ["overview", "lab", "chats", "inbox"];
   let current = "overview";
   function show(view) {
     current = view;
-    for (const v of ["overview", "lab", "chats"]) $(`v-${v}`).hidden = v !== view;
+    for (const v of VIEWS) $(`v-${v}`).hidden = v !== view;
     document.querySelectorAll(".side-nav button").forEach((b) => b.setAttribute("aria-current", String(b.dataset.view === view)));
     try { history.replaceState(null, "", `#${view}`); } catch (_) { /* ignore */ }
     if (view === "overview") loadOverview();
     if (view === "lab") loadLab();
     if (view === "chats") loadChats();
+    if (view === "inbox") loadInbox();
   }
   document.querySelectorAll(".side-nav button").forEach((b) => b.addEventListener("click", () => show(b.dataset.view)));
 
   function gate(text) {
     $("gate").hidden = false;
-    for (const v of ["overview", "lab", "chats"]) $(`v-${v}`).hidden = true;
+    for (const v of VIEWS) $(`v-${v}`).hidden = true;
     $("gateText").textContent = text;
   }
   function handle(err) {
@@ -254,9 +256,18 @@
       ...m.tools.map((t) => h("div", { class: "tool" + (t.ok ? "" : " blocked") }, `${t.ok ? "✓" : "⛔"} ${t.name}(${JSON.stringify(t.arguments)})\n→ ${t.result}`))))));
   }
 
+  // ---------- contact inbox ----------
+  async function loadInbox() {
+    let list;
+    try { list = await api.adminMessages(); } catch (err) { handle(err); return; }
+    $("inboxList").replaceChildren(...(list.length ? list.map((m) => h("li", { class: "panel" },
+      h("div", { class: "m" }, h("strong", { text: m.name }), ` <${m.email}> · ${m.topic} · ${new Date(m.created_at).toLocaleString()}`),
+      h("p", { text: m.message }))) : [h("li", { class: "sub", text: "No contact messages yet." })]));
+  }
+
   // ---------- start ----------
   const start = (location.hash || "#overview").slice(1);
   api.me().then((me) => { $("who").textContent = me.email; }).catch(() => {});
-  show(["overview", "lab", "chats"].includes(start) ? start : "overview");
+  show(VIEWS.includes(start) ? start : "overview");
   window.KV.console = { show };
 })();

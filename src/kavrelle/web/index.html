@@ -64,6 +64,9 @@
 <nav class="directory" id="directory" aria-label="Mall directory">
   <header><h2>Directory</h2><p>Click a shop to walk straight in.</p></header>
   <div class="floors" id="dirFloors"></div>
+  <footer class="dir-foot" aria-label="Site links">
+    <a href="/help">Help</a><a href="/contact">Contact</a><a href="/about">About</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a>
+  </footer>
 </nav>
 
 <div class="shop-card" id="shopCard" hidden>
@@ -127,6 +130,7 @@
     <div class="field"><label for="coName">Full name</label><input id="coName" name="name" autocomplete="name" maxlength="80" required><div class="err" id="coNameErr"></div></div>
     <div class="field"><label for="coEmail">Email</label><input id="coEmail" name="email" type="email" autocomplete="email" maxlength="160" required><div class="err" id="coEmailErr"></div></div>
     <div class="field"><label for="coZip">Zip code</label><input id="coZip" name="zip" autocomplete="postal-code" maxlength="12" required><div class="err" id="coZipErr"></div></div>
+    <p class="hint-text">By placing this order you agree to our <a href="/terms" target="_blank" rel="noopener">Terms</a>. We use your details only for this order, as our <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> explains. A confirmation email follows.</p>
     <p class="form-error" id="coError" role="alert" hidden></p>
     <div class="row"><button class="btn" type="button" data-close>Back</button><button class="btn primary" type="submit" id="coSubmit">Place order</button></div>
   </form>
@@ -175,6 +179,7 @@
     <form id="loginForm" class="stack" novalidate>
       <div class="field"><label for="liEmail">Email</label><input id="liEmail" type="email" autocomplete="email" maxlength="160" required><div class="err" id="liEmailErr"></div></div>
       <div class="field"><label for="liPass">Password</label><input id="liPass" type="password" autocomplete="current-password" maxlength="128" required><div class="err" id="liPassErr"></div></div>
+      <p class="hint-text"><a href="/reset" id="forgotLink">Forgot your password?</a></p>
       <p class="form-error" id="liError" role="alert" hidden></p>
       <div class="row"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit" id="liSubmit">Sign in</button></div>
     </form>
@@ -186,6 +191,8 @@
         <div class="field"><label for="suPass">Password</label><input id="suPass" type="password" autocomplete="new-password" maxlength="128" required><div class="err" id="suPassErr"></div></div>
       </div>
       <p class="hint-text">8+ characters with letters and numbers. Already ordered as a guest? Use the same email and zip to see those orders.</p>
+      <label class="check"><input type="checkbox" id="suTerms"> <span>I agree to the <a href="/terms" target="_blank" rel="noopener">Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.</span></label>
+      <div class="err" id="suTermsErr"></div>
       <p class="form-error" id="suError" role="alert" hidden></p>
       <div class="row"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit" id="suSubmit">Create account</button></div>
     </form>

@@ -128,6 +128,7 @@ def _console(engine: Engine, evaluator: Any = None) -> TestClient:
             "email": "owner@example.com",
             "zip_code": "54000",
             "password": "console2026",
+            "accept_terms": True,
         },
     )
     return c
@@ -250,6 +251,7 @@ def test_conversation_audit(engine: Engine) -> None:
             "email": "owner@example.com",
             "zip_code": "54000",
             "password": "console2026",
+            "accept_terms": True,
         },
     )
     _make_admin(engine)

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Reset password | Kavrelle</title>
+<meta name="description" content="Reset your Kavrelle password.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@800;900&display=swap">
+<link rel="stylesheet" href="/static/pages.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23e2552d'/%3E%3Ctext x='16' y='23' font-family='Arial' font-weight='900' font-size='20' text-anchor='middle' fill='white'%3EK%3C/text%3E%3C/svg%3E">
+</head>
+<body data-page="reset">
+<header class="top">
+  <a class="brand" href="/" aria-label="Kavrelle home"><span class="mark" aria-hidden="true">K</span><span class="wordmark">KAVREL<span>LE</span></span></a>
+  <a class="btn" href="/">← Back to the mall</a>
+</header>
+<main class="page">
+<div class="hero small-hero"><p class="kicker">Account</p><h1 id="rTitle">Reset your password</h1></div>
+<div class="narrow">
+<form class="card form" id="forgotForm" novalidate>
+  <p>Enter the email of your account. If it exists, we’ll send a link to choose a new password. The link works once, for 30 minutes.</p>
+  <div class="field"><label for="fEmail">Email</label><input id="fEmail" type="email" autocomplete="email" maxlength="160" required><div class="err" id="fEmailErr"></div></div>
+  <p class="form-error" id="fError" role="alert" hidden></p>
+  <button class="btn primary" type="submit" id="fSubmit">Send reset link</button>
+</form>
+<form class="card form" id="resetForm" novalidate hidden>
+  <p>Choose a new password: 8 or more characters with letters and numbers. You will be signed out on every device.</p>
+  <div class="field"><label for="rPass">New password</label><input id="rPass" type="password" autocomplete="new-password" maxlength="128" required><div class="err" id="rPassErr"></div></div>
+  <div class="field"><label for="rPass2">Repeat it</label><input id="rPass2" type="password" autocomplete="new-password" maxlength="128" required><div class="err" id="rPass2Err"></div></div>
+  <p class="form-error" id="rError" role="alert" hidden></p>
+  <button class="btn primary" type="submit" id="rSubmit">Save new password</button>
+</form>
+<div class="card done" id="resetDone" hidden role="status" tabindex="-1"><div class="tick" aria-hidden="true">✓</div><h2 id="doneTitle"></h2><p id="doneText"></p><a class="btn primary" href="/">Back to the mall</a></div>
+</div>
+</main>
+<footer class="foot">
+  <nav aria-label="Site links">
+    <a href="/help">Help &amp; FAQ</a><a href="/contact">Contact</a><a href="/about">About</a><a href="/terms">Terms of Service</a><a href="/privacy">Privacy Policy</a>
+  </nav>
+  <p>Kavrelle is a demonstration store built as a portfolio project. No payment is taken and nothing is shipped.</p>
+</footer>
+<script src="/static/js/pages.js"></script>
+</body>
+</html>

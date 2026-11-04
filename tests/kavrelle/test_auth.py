@@ -18,6 +18,7 @@ ZARA = {
     "email": "Zara@Example.com",
     "zip_code": "75500",
     "password": "silk2026scarf",
+    "accept_terms": True,
 }
 
 
@@ -75,6 +76,7 @@ def test_existing_customer_can_claim_account_only_with_matching_zip(
         "email": "ali@example.com",
         "zip_code": "99999",
         "password": "orders2026x",
+        "accept_terms": True,
     }
     assert client.post("/api/auth/signup", json=wrong).status_code == 409
     right = {**wrong, "zip_code": "54000"}
@@ -167,7 +169,7 @@ def test_expired_session_is_rejected(client: TestClient, engine_seeded: Engine) 
 def test_my_orders_needs_sign_in_and_shows_only_mine(client: TestClient) -> None:
     assert client.get("/api/me/orders").status_code == 401
     client.post("/api/auth/signup", json={"name": "Sara", "email": "sara@example.com", "zip_code": "44000",
-                                          "password": "monitor2026"})  # fmt: skip
+                                          "password": "monitor2026", "accept_terms": True})  # fmt: skip
     codes = {o["code"] for o in client.get("/api/me/orders").json()}
     assert codes == {"A103", "A104"}
 
