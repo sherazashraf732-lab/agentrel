@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kavrelle | The 3D Mall</title>
+<meta name="description" content="Walk through Kavrelle, a 3D shopping mall. Fashion, sneakers, beauty, electronics and home, all under one roof.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@800;900&display=swap">
+<link rel="stylesheet" href="/static/styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23e2552d'/%3E%3Ctext x='16' y='23' font-family='Arial' font-weight='900' font-size='20' text-anchor='middle' fill='white'%3EK%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+
+<div id="loader" role="status" aria-live="polite">
+  <div class="loader-inner">
+    <div class="wordmark">KAVREL<span>LE</span></div>
+    <p class="loader-tag">Everything, under one roof.</p>
+    <div class="progress" aria-hidden="true"><i id="loadBar"></i></div>
+    <div class="loader-status" id="loadStatus">Opening the doors…</div>
+    <div class="loader-error" id="loadError" hidden>
+      <p id="loadErrorText"></p>
+      <button class="btn primary" id="loadRetry" type="button">Try again</button>
+    </div>
+  </div>
+</div>
+
+<div class="banner" id="offline" role="alert" hidden>
+  <span id="offlineText">You’re offline. Some things won’t work until you reconnect.</span>
+  <button type="button" id="offlineRetry">Retry</button>
+</div>
+
+<canvas id="scene" tabindex="0" aria-label="3D view of the Kavrelle mall. Drag to look around, click a shop to walk in, click a product to see it."></canvas>
+
+<header class="topbar">
+  <a class="brand" href="#" id="homeLink" aria-label="Kavrelle home">
+    <span class="brand-mark" aria-hidden="true">K</span>
+    <span class="wordmark">KAVREL<span>LE</span></span>
+  </a>
+  <div class="search" role="search">
+    <label class="sr-only" for="q">Search products and shops</label>
+    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="m20 20-4-4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+    <input id="q" type="search" autocomplete="off" placeholder="Search dresses, shirts, sneakers, perfume…" role="combobox" aria-expanded="false" aria-controls="qResults" aria-autocomplete="list">
+    <ul class="search-results" id="qResults" role="listbox" hidden></ul>
+  </div>
+  <div class="top-actions">
+    <div class="seg" role="group" aria-label="Floor" id="floorSeg">
+      <button type="button" data-floor="1" aria-pressed="true">Floor 1</button>
+      <button type="button" data-floor="2" aria-pressed="false">Floor 2</button>
+    </div>
+    <div class="seg" role="group" aria-label="View" id="viewSeg">
+      <button type="button" data-mode="3d" aria-pressed="true">3D</button>
+      <button type="button" data-mode="2d" aria-pressed="false">Grid</button>
+    </div>
+    <button class="btn" type="button" id="trackBtn"><span aria-hidden="true">📦</span><span class="label">Track order</span></button>
+    <button class="btn primary" type="button" id="cartBtn" aria-haspopup="dialog">
+      <span>Cart</span><span class="badge" id="cartCount" aria-label="items in cart">0</span>
+    </button>
+  </div>
+</header>
+
+<nav class="directory" id="directory" aria-label="Mall directory">
+  <header><h2>Directory</h2><p>Click a shop to walk straight in.</p></header>
+  <div class="floors" id="dirFloors"></div>
+</nav>
+
+<div class="shop-card" id="shopCard" hidden>
+  <div>
+    <div class="k" id="shopKicker"></div>
+    <h2 id="shopName"></h2>
+    <p id="shopDesc"></p>
+  </div>
+  <button class="btn dark" type="button" id="leaveShop">← Concourse</button>
+</div>
+
+<div class="controls-hint" id="hint">
+  <span><kbd>Drag</kbd> look</span><span><kbd>W</kbd><kbd>S</kbd> walk</span><span><kbd>Click</kbd> a shop or product</span><span><kbd>Esc</kbd> back</span>
+</div>
+<div class="tooltip" id="tip" hidden></div>
+
+<main class="grid2d" id="grid2d" hidden></main>
+
+<div class="scrim" id="scrim"></div>
+
+<aside class="sheet" id="productSheet" aria-label="Product details" aria-hidden="true">
+  <button class="close" type="button" data-close aria-label="Close product">×</button>
+  <div class="sheet-scroll">
+    <div class="p-photo"><img id="pImg" alt=""><a class="credit" id="pCredit" target="_blank" rel="noopener"></a></div>
+    <div class="p-body">
+      <div class="p-shop" id="pShop"></div>
+      <h2 class="p-name" id="pName"></h2>
+      <div class="p-price" id="pPrice"></div>
+      <p class="p-desc" id="pDesc"></p>
+      <div class="p-color" id="pColor"></div>
+      <div class="field-label"><span id="pVarLabel"></span><span id="pVarPicked" class="p-color"></span></div>
+      <div class="chips" id="pChips"></div>
+      <div class="field-label"><span>Quantity</span></div>
+      <div class="stepper"><button type="button" id="qMinus" aria-label="Less">−</button><output id="qVal">1</output><button type="button" id="qPlus" aria-label="More">+</button></div>
+      <p class="form-error" id="pError" role="alert" hidden></p>
+    </div>
+  </div>
+  <div class="sheet-foot">
+    <div class="totals"><div class="k">Total</div><div class="v" id="pTotal"></div></div>
+    <button class="btn primary big" type="button" id="addBtn">Add to cart</button>
+  </div>
+</aside>
+
+<aside class="sheet" id="cartDrawer" aria-label="Your cart" aria-hidden="true">
+  <button class="close" type="button" data-close aria-label="Close cart">×</button>
+  <div class="drawer-head"><h2>Your cart</h2></div>
+  <div class="sheet-scroll"><ul class="cart-lines" id="cartLines"></ul>
+    <div class="cart-empty" id="cartEmpty" hidden><div class="big-emoji" aria-hidden="true">🛍️</div><div>Your cart is empty. Every shop is one click away.</div></div>
+    <p class="form-error inset" id="cartError" role="alert" hidden></p>
+  </div>
+  <div class="sheet-foot">
+    <div class="totals"><div class="k">Subtotal</div><div class="v" id="cartTotal">$0.00</div></div>
+    <button class="btn primary big" type="button" id="checkoutBtn">Checkout</button>
+  </div>
+</aside>
+
+<dialog id="checkoutDlg" aria-labelledby="coTitle">
+  <form class="dlg" id="checkoutForm" novalidate>
+    <h2 id="coTitle">Checkout</h2>
+    <p class="sub">Pay on delivery. No card needed for this demo.</p>
+    <div class="field"><label for="coName">Full name</label><input id="coName" name="name" autocomplete="name" maxlength="80" required><div class="err" id="coNameErr"></div></div>
+    <div class="field"><label for="coEmail">Email</label><input id="coEmail" name="email" type="email" autocomplete="email" maxlength="160" required><div class="err" id="coEmailErr"></div></div>
+    <div class="field"><label for="coZip">Zip code</label><input id="coZip" name="zip" autocomplete="postal-code" maxlength="12" required><div class="err" id="coZipErr"></div></div>
+    <p class="form-error" id="coError" role="alert" hidden></p>
+    <div class="row"><button class="btn" type="button" data-close>Back</button><button class="btn primary" type="submit" id="coSubmit">Place order</button></div>
+  </form>
+  <div class="dlg success" id="coDone" hidden>
+    <div class="tick" aria-hidden="true">✓</div>
+    <h2>Order placed</h2>
+    <p class="sub">Keep this code to track or cancel your order.</p>
+    <div class="code-box"><span id="coCode"></span><button class="btn" type="button" id="copyCode">Copy</button></div>
+    <div class="row"><button class="btn" type="button" id="coTrack">Track it</button><button class="btn primary" type="button" data-close>Keep shopping</button></div>
+  </div>
+</dialog>
+
+<dialog id="trackDlg" aria-labelledby="trTitle">
+  <form class="dlg" id="trackForm" novalidate>
+    <h2 id="trTitle">Track your order</h2>
+    <p class="sub">Enter your order code with the email and zip code you used.</p>
+    <div class="field"><label for="trCode">Order code</label><input id="trCode" autocomplete="off" maxlength="20" placeholder="e.g. K7Q2M9XA" required><div class="err" id="trCodeErr"></div></div>
+    <div class="row">
+      <div class="field"><label for="trEmail">Email</label><input id="trEmail" type="email" autocomplete="email" maxlength="160" required><div class="err" id="trEmailErr"></div></div>
+      <div class="field"><label for="trZip">Zip code</label><input id="trZip" autocomplete="postal-code" maxlength="12" required><div class="err" id="trZipErr"></div></div>
+    </div>
+    <p class="form-error" id="trError" role="alert" hidden></p>
+    <div class="row"><button class="btn" type="button" data-close>Close</button><button class="btn primary" type="submit" id="trSubmit">Find order</button></div>
+  </form>
+  <div class="dlg" id="trResult" hidden>
+    <div class="spread"><h2 id="trResCode"></h2><span class="status-pill" id="trStatus"></span></div>
+    <ol class="timeline" id="trTimeline"><li>Placed</li><li>Shipped</li><li>Delivered</li></ol>
+    <ul class="order-items" id="trItems"></ul>
+    <div class="spread strong"><span>Total</span><span id="trTotal"></span></div>
+    <div class="confirm" id="trConfirm" hidden>
+      <strong>Cancel this order?</strong><span class="small">The items go back on the shelf. This can’t be undone.</span>
+      <div class="row"><button class="btn" type="button" id="trKeep">Keep order</button><button class="btn dark" type="button" id="trYes">Yes, cancel</button></div>
+    </div>
+    <p class="form-error" id="trResError" role="alert" hidden></p>
+    <div class="row"><button class="btn" type="button" id="trAnother">Track another</button><button class="btn" type="button" id="trCancel" hidden>Cancel order</button><button class="btn primary" type="button" data-close>Done</button></div>
+  </div>
+</dialog>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script src="/static/vendor/three.min.js"></script>
+<script src="/static/js/api.js"></script>
+<script src="/static/js/mall3d.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>
