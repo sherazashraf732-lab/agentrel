@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine, func, select
@@ -67,6 +69,20 @@ CSP = (
     "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; "
     "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 )
+
+
+def _versioned_index() -> str:
+    """index.html with ?v=<content hash> on our own CSS/JS, so a new release is never
+    hidden behind a stale browser cache."""
+    html = (WEB_DIR / "index.html").read_text("utf-8")
+
+    def stamp(match: re.Match[str]) -> str:
+        path = match.group(1)
+        f = WEB_DIR / path.removeprefix("/static/")
+        digest = hashlib.sha256(f.read_bytes()).hexdigest()[:10] if f.is_file() else "0"
+        return f'"{path}?v={digest}"'
+
+    return re.sub(r'"(/static/[^"?]+\.(?:js|css))"', stamp, html)
 
 
 class CartLineOut(BaseModel):
@@ -249,17 +265,22 @@ def create_app(
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "same-origin")
         response.headers.setdefault("Content-Security-Policy", CSP)
-        if request.url.path.startswith("/api/"):
+        path = request.url.path
+        if path.startswith("/api/"):
             response.headers.setdefault("Cache-Control", "no-store")
+        elif path.startswith(("/static/img/", "/static/vendor/")):
+            response.headers.setdefault("Cache-Control", "public, max-age=604800")
+        elif path.startswith("/static/"):
+            response.headers.setdefault("Cache-Control", "no-cache")
         return response
 
     if WEB_DIR.is_dir():
         app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 
         @app.get("/", include_in_schema=False)
-        def index() -> FileResponse:
-            return FileResponse(
-                WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"}
+        def index() -> HTMLResponse:
+            return HTMLResponse(
+                _versioned_index(), headers={"Cache-Control": "no-cache"}
             )
 
     @app.get("/api/catalog", response_model=list[CatalogShop])

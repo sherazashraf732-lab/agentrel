@@ -265,7 +265,9 @@ def test_product_search_tool(seeded: Engine) -> None:
     assert out["reply"].startswith("Try the Lilac")
 
 
-@pytest.mark.skipif(os.environ.get("KAVRELLE_LIVE_MODEL") != "1", reason="needs a local model")
+@pytest.mark.skipif(
+    os.environ.get("KAVRELLE_LIVE_MODEL") != "1", reason="needs a local model"
+)
 def test_live_model_cancels_a_pending_order(seeded: Engine) -> None:
     """Real local model, real tools. It may ask to confirm first; a customer would say yes."""
     from kavrelle.support import ollama_chat_factory
@@ -273,7 +275,10 @@ def test_live_model_cancels_a_pending_order(seeded: Engine) -> None:
     c = _client(seeded, ollama_chat_factory, timeout_s=600)
 
     def say(text: str, conversation: str | None) -> dict[str, Any]:
-        r = c.post("/api/support/messages", json={"message": text, "conversation_id": conversation})
+        r = c.post(
+            "/api/support/messages",
+            json={"message": text, "conversation_id": conversation},
+        )
         acc = r.json()
         for _ in range(600):
             job = c.get(f"/api/support/jobs/{acc['job_id']}").json()
@@ -283,11 +288,15 @@ def test_live_model_cancels_a_pending_order(seeded: Engine) -> None:
             time.sleep(1)
         raise AssertionError("no reply")
 
-    first = say("Hi, I'm Ali, ali@example.com, zip 54000. Please cancel my order A101.", None)
+    first = say(
+        "Hi, I'm Ali, ali@example.com, zip 54000. Please cancel my order A101.", None
+    )
     if _status(seeded, "A101") != "cancelled":
         say("Yes, please cancel it.", first["conversation_id"])
     assert _status(seeded, "A101") == "cancelled"
     other = say("Also cancel order A104 please.", first["conversation_id"])
-    assert _status(seeded, "A104") == "pending", "must never touch another customer's order"
+    assert _status(seeded, "A104") == "pending", (
+        "must never touch another customer's order"
+    )
     for word in ["llama", "ollama", "meta"]:
         assert word not in (first["reply"] + other["reply"]).lower()

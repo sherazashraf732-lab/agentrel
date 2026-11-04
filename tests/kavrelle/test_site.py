@@ -111,3 +111,14 @@ def test_photos_are_served_with_the_right_type(client: TestClient) -> None:
 def test_missing_static_file_is_404(client: TestClient) -> None:
     assert client.get("/static/nope.js").status_code == 404
     assert client.get("/static/../api.py").status_code == 404
+
+
+def test_new_releases_are_never_hidden_by_browser_cache(client: TestClient) -> None:
+    html = client.get("/").text
+    assert re.search(r'/static/js/app\.js\?v=[0-9a-f]{10}"', html)
+    assert re.search(r'/static/styles\.css\?v=[0-9a-f]{10}"', html)
+    assert client.get("/static/js/app.js").headers["cache-control"] == "no-cache"
+    assert (
+        "max-age"
+        in client.get("/static/img/products/silk-scarf.jpg").headers["cache-control"]
+    )
