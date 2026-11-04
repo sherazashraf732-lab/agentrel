@@ -73,35 +73,74 @@
   $("loadRetry").addEventListener("click", () => { $("loadError").hidden = true; boot(); });
 
   // ---------- directory / grid ----------
+  const unit = (s) => `${s.floor}·${String(s.position).padStart(2, "0")}`;
   function renderDirectory() {
     const root = $("dirFloors");
     root.replaceChildren();
+    $("dirCount").textContent = `${state.catalog.length} shops`;
     for (const floor of [1, 2]) {
-      const list = h("ul");
+      const list = h("ul", { "data-floor-list": floor });
       for (const s of state.catalog.filter((x) => x.floor === floor)) {
         list.append(h("li", {}, h("button", { type: "button", "data-shop": s.slug, onclick: () => openShop(s.slug) },
-          h("span", { class: "swatch", "aria-hidden": "true" }), h("span", { class: "d-name", text: s.name }),
+          h("code", { class: "d-unit", text: unit(s) }), h("span", { class: "d-name", text: s.name }),
           h("span", { class: "d-meta", text: s.category }))));
       }
-      root.append(h("h3", { text: `Floor ${floor}` }), list);
+      root.append(list);
     }
-    root.querySelectorAll("button[data-shop]").forEach((b) => {
-      const s = state.shops.get(b.dataset.shop);
-      b.querySelector(".swatch").style.background = shopColor(s);
-    });
+    showDirFloor(state.floor);
+  }
+  function showDirFloor(floor) {
+    document.querySelectorAll("#dirFloors [data-floor-list]").forEach((ul) => { ul.hidden = Number(ul.dataset.floorList) !== floor; });
+    document.querySelectorAll("#dirTabs button").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.dfloor) === floor)));
+  }
+  document.querySelectorAll("#dirTabs button").forEach((b) => b.addEventListener("click", () => showDirFloor(Number(b.dataset.dfloor))));
+  function foldDirectory(folded) {
+    $("directory").classList.toggle("folded", folded);
+    $("dirFold").setAttribute("aria-expanded", String(!folded));
+    $("dirBody").hidden = folded;
+  }
+  $("dirFold").addEventListener("click", () => {
+    const folded = !$("directory").classList.contains("folded");
+    foldDirectory(folded); store.set("kv_dir_folded", folded ? "1" : "");
+  });
+  function updateWhere() {
+    const chip = $("whereChip");
+    chip.hidden = state.mode !== "3d";
+    const s = state.shop && state.shops.get(state.shop);
+    chip.replaceChildren(...(s
+      ? ["In ", h("b", { text: s.name }), ` · unit ${unit(s)}`]
+      : ["You are on ", h("b", { text: `Floor ${state.floor}` }), ", concourse"]));
   }
   function markDirectory() {
     document.querySelectorAll("#dirFloors button[data-shop]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.shop === state.shop)));
   }
 
+  const sizeRange = (p) => {
+    const v = p.variants.map((x) => x.label);
+    return v.length <= 1 ? (v[0] || "One size").toLowerCase() : `${v[0]}–${v[v.length - 1]}`;
+  };
   function renderGrid() {
     const root = $("grid2d");
+    const products = state.catalog.reduce((n, s) => n + s.products.length, 0);
+    const floors = new Set(state.catalog.map((s) => s.floor)).size;
     root.replaceChildren(h("section", { class: "hero2d" },
-      h("h1", {}, "Everything, under ", h("span", { text: "one roof." })),
-      h("p", { text: "Twelve shops across two floors: fashion, beauty, tech, home and more. Tap any product to see it up close." })));
+      h("div", {}, h("h1", {}, "Twelve shops, two floors, ", h("em", { text: "one" }), " afternoon."),
+        h("p", { text: "Clothes, shoes, beauty, gadgets and things for home. Browse here, or step into the 3D mall and walk the floors." })),
+      h("dl", { class: "facts" }, ...[[state.catalog.length, "Shops"], [products, "Products"], [floors, "Floors"]]
+        .map(([n, l]) => h("div", {}, h("dt", { text: l }), h("dd", { text: String(n) }))))));
+    const index = h("nav", { class: "shop-index", "aria-label": "Shops" });
+    let lastFloor = 0;
     for (const s of state.catalog) {
-      const head = h("header", {}, h("div", {}, h("div", { class: "fl", text: `Floor ${s.floor} · ${s.category}` }), h("h2", { text: s.name }), h("p", { text: s.description })));
-      head.style.background = shopColor(s);
+      if (lastFloor && s.floor !== lastFloor) index.append(h("span", { class: "sep", "aria-hidden": "true", text: "/" }));
+      lastFloor = s.floor;
+      index.append(h("a", { href: `#shop-${s.slug}`, text: s.name, onclick: (e) => { e.preventDefault(); openShop(s.slug); } }));
+    }
+    root.append(index);
+    for (const s of state.catalog) {
+      const head = h("header", {},
+        h("code", { class: "unit", text: `Unit ${unit(s)}` }),
+        h("div", {}, h("h2", { text: s.name }), h("p", { text: `${s.category} · ${s.description}` })),
+        state.webgl === false ? null : h("button", { type: "button", class: "walk-in", text: "Walk in, 3D →", onclick: () => walkIn(s.slug) }));
       const sec = h("section", { class: "shop-sec", id: `shop-${s.slug}` }, head);
       if (!s.products.length) sec.append(h("div", { class: "no-products", text: "Opening soon. New kitchens are moving in." }));
       else {
@@ -109,18 +148,29 @@
         for (const p of s.products) {
           cards.append(h("button", { class: "card", type: "button", "data-product": p.slug, onclick: () => openProduct(p.slug) },
             h("div", { class: "ph" }, h("img", { src: p.image_url || "", alt: p.name, loading: "lazy", onerror: (e) => { e.target.hidden = true; } })),
-            h("span", { class: "n", text: p.name }), h("span", { class: "pr", text: money(p.price_cents, p.currency) })));
+            h("span", { class: "n", text: p.name }),
+            h("span", { class: "m" }, h("span", { text: `${p.color} · ${sizeRange(p)}` }), h("b", { class: "pr", text: money(p.price_cents, p.currency) }))));
         }
         sec.append(cards);
       }
       root.append(sec);
     }
+    const col = (title, links) => h("div", {}, h("h3", { text: title }), ...links.map(([t, href]) => h("a", { href, text: t })));
     root.append(h("footer", { class: "site-foot" },
-      h("div", { class: "wordmark", text: "KAVRELLE" }),
-      h("nav", { "aria-label": "Site links" }, ...[["Help & FAQ", "/help"], ["Contact", "/contact"], ["About", "/about"],
-        ["Terms", "/terms"], ["Privacy", "/privacy"]].map(([t, href]) => h("a", { href, text: t }))),
-      h("p", { text: "A demonstration store. No payment is taken and nothing is shipped." }),
-      h("p", { class: "credit", text: "Created by Sheraz Ashraf" })));
+      h("div", { class: "foot-brand" }, h("div", { class: "wordmark" }, "Kavrel", h("span", { text: "le" })),
+        h("p", { text: "A demonstration store. No payment is taken and nothing is shipped." })),
+      col("Help", [["Help & FAQ", "/help"], ["Contact", "/contact"]]),
+      col("Company", [["About", "/about"]]),
+      col("Legal", [["Terms", "/terms"], ["Privacy", "/privacy"]])));
+  }
+  async function walkIn(slug) {
+    if (!state.mall) {
+      const ok = await startMall(new URLSearchParams(location.search));
+      if (!ok) { toast("3D isn’t available on this device.", { bad: true }); return; }
+    }
+    store.set("kv_mode", "3d");
+    setMode("3d", true);
+    openShop(slug);
   }
 
   // ---------- navigation ----------
@@ -132,6 +182,7 @@
     $("directory").hidden = mode === "2d";
     $("hint").hidden = mode === "2d";
     $("walkPad").hidden = mode === "2d";
+    updateWhere();
     $("floorSeg").hidden = mode === "2d";
     document.querySelectorAll("#viewSeg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
     if (state.mall) { state.mall.pause(mode === "2d"); if (mode === "3d") window.dispatchEvent(new Event("resize")); }
@@ -160,6 +211,8 @@
   }
   function setFloor(floor) {
     state.floor = floor;
+    showDirFloor(floor);
+    updateWhere();
     document.querySelectorAll("#floorSeg button").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.floor) === floor)));
   }
   function showShopCard(slug) {
@@ -174,6 +227,7 @@
     if (!s) return;
     state.shop = slug;
     setFloor(s.floor);
+    updateWhere();
     markDirectory();
     if (state.mode === "3d" && state.mall) { state.mall.goShop(slug); showShopCard(slug); $("scene").focus({ preventScroll: true }); }
     else { const el = $(`shop-${slug}`); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }
@@ -182,6 +236,7 @@
   function leaveShop() {
     state.shop = null;
     markDirectory();
+    updateWhere();
     $("shopCard").hidden = true;
     if (state.mall) state.mall.goConcourse(state.floor);
     setHash("");
@@ -555,6 +610,7 @@
     state.shops = new Map(catalog.map((s) => [s.slug, s]));
     state.products = new Map(catalog.flatMap((s) => s.products.map((p) => [p.slug, { ...p, shop: s.slug }])));
     renderDirectory();
+    if (store.get("kv_dir_folded") === "1") foldDirectory(true);
     renderGrid();
     refreshCart().catch(() => {});
     api.me().then(setMe).catch(() => setMe(null));

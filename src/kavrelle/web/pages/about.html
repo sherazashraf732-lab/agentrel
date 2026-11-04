@@ -4,51 +4,62 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>About | Kavrelle</title>
-<meta name="description" content="About Kavrelle, the 3D shopping mall.">
+<meta name="description" content="About Kavrelle, the 3D shopping mall, and who made it.">
 <meta name="author" content="Sheraz Ashraf">
 <meta name="robots" content="index, follow">
-<meta name="theme-color" content="#e2552d">
+<meta name="theme-color" content="#fdfaf5">
 <link rel="canonical" href="__BASE__/about">
 <meta property="og:url" content="__BASE__/about">
 <meta property="og:site_name" content="Kavrelle">
 <meta property="og:type" content="website">
 <meta property="og:title" content="About | Kavrelle">
-<meta property="og:description" content="About Kavrelle, the 3D shopping mall.">
+<meta property="og:description" content="About Kavrelle, the 3D shopping mall, and who made it.">
 <meta property="og:image" content="__BASE__/static/img/og.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@800;900&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="/static/pages.css">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23e2552d'/%3E%3Ctext x='16' y='23' font-family='Arial' font-weight='900' font-size='20' text-anchor='middle' fill='white'%3EK%3C/text%3E%3C/svg%3E">
 </head>
 <body data-page="about">
 <header class="top">
-  <a class="brand" href="/" aria-label="Kavrelle home"><span class="mark" aria-hidden="true">K</span><span class="wordmark">KAVREL<span>LE</span></span></a>
-  <a class="btn" href="/">← Back to the mall</a>
+  <a class="brand" href="/" aria-label="Kavrelle home"><span class="wordmark">Kavrel<span>le</span></span></a>
+  <nav class="topnav" aria-label="Site"><a href="/help">Help</a><a href="/contact">Contact</a><a href="/about" aria-current="page">About</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a></nav>
+  <a class="back" href="/">← Back to the mall</a>
 </header>
 <main class="page">
 <div class="hero"><p class="kicker">About</p><h1>A mall you can walk through.</h1><p class="lede">Kavrelle puts twelve shops on two floors of a 3D building. Walk the concourse, step into a shop, pick something off the shelf. If 3D isn’t your thing, the grid view shows everything on one page.</p></div>
-<div class="cards3">
-<div class="tile"><h2>12 shops, 2 floors</h2><p>Fashion, sneakers, beauty, jewellery, electronics, home and more, each with its own shelves and photos.</p></div>
-<div class="tile"><h2>Orders you control</h2><p>Every order gets a short code. Track or cancel it any time with that code, your email and zip code.</p></div>
-<div class="tile"><h2>Help that checks first</h2><p>Kavrelle Support looks up your actual order before it answers, and follows the same rules as the website.</p></div>
+<div class="numbers">
+<div><b>12</b><span>shops on two floors, each with its own shelves and photos</span></div>
+<div><b>8</b><span>characters in an order code you can track or cancel with</span></div>
+<div><b>12</b><span>reliability metrics the support assistant is measured on</span></div>
 </div>
 <article class="prose narrow">
 <h2>Why it exists</h2>
-<p>Kavrelle is a portfolio project. It shows a complete store, from the 3D front end to accounts, orders, emails and a support assistant, and it is used to measure how reliable an automated support assistant really is, with the 12 reliability metrics from the research paper <em>Towards a Science of AI Agent Reliability</em>.</p>
-<p class="note">It is a demonstration: no payment is taken and nothing is shipped.</p>
+<p>Kavrelle is a portfolio project. It is a complete store, from the 3D front end to accounts, orders, emails and a support assistant. It is also a test bench: the assistant is measured with the 12 reliability metrics from the research paper <em>Towards a Science of AI Agent Reliability</em> (Princeton, ICML 2026), the way a real company would check an assistant before letting it talk to customers.</p>
 <h2>Built carefully</h2>
-<ul><li>Strict security headers, hashed passwords and rate-limited sign-in.</li><li>No tracking, no ads, one essential cookie.</li><li>Tested end to end in a real browser on every change.</li></ul>
-<p><a class="btn primary" href="/">Enter the mall</a></p>
+<ul><li>Strict security headers, hashed passwords and rate-limited sign-in.</li><li>No tracking, no ads, one essential cookie.</li><li>Every feature is tested in a real browser on every change.</li></ul>
+<p class="small-note">It is a demonstration: no payment is taken and nothing is shipped.</p>
 </article>
+<section class="maker" aria-labelledby="maker">
+  <p class="kicker">Created by</p>
+  <h2 id="maker">Sheraz Ashraf</h2>
+  <p class="role">Software engineering student · builds AI systems and the tools that test them</p>
+  <div class="maker-body">
+    <p>Sheraz designed and built Kavrelle end to end: the 3D mall, the shop and its accounts, the emails, the support assistant and the owner’s console. He started from a simple question: an AI assistant can look accurate in a demo, so how do you know it is reliable enough for real customers?</p>
+    <p>Kavrelle answers that question by putting an assistant in a working store and measuring it the way the research says to. It is part of a series of real-world AI projects he is building in the open.</p>
+  </div>
+  <p class="maker-links"><a href="https://github.com/sherazashraf732-lab" rel="noopener">GitHub: sherazashraf732-lab</a><a href="https://github.com/sherazashraf732-lab/agentrel" rel="noopener">Source code of this site</a></p>
+</section>
+<p class="cta"><a class="btn primary" href="/">Enter the mall</a></p>
 </main>
 <footer class="foot">
-  <nav aria-label="Site links">
-    <a href="/help">Help &amp; FAQ</a><a href="/contact">Contact</a><a href="/about">About</a><a href="/terms">Terms of Service</a><a href="/privacy">Privacy Policy</a>
-  </nav>
-  <p>Kavrelle is a demonstration store built as a portfolio project. No payment is taken and nothing is shipped.</p>
-  <p class="credit">Created by Sheraz Ashraf</p>
+  <div class="foot-brand"><a class="wordmark" href="/">Kavrel<span>le</span></a><p>A demonstration store built as a portfolio project. No payment is taken and nothing is shipped.</p></div>
+  <div><h3>Shop</h3><a href="/">The 3D mall</a><a href="/?mode=2d">All products</a></div>
+  <div><h3>Help</h3><a href="/help">Help &amp; FAQ</a><a href="/contact">Contact</a></div>
+  <div><h3>Company</h3><a href="/about">About</a></div>
+  <div><h3>Legal</h3><a href="/terms">Terms of Service</a><a href="/privacy">Privacy Policy</a></div>
 </footer>
 </body>
 </html>
