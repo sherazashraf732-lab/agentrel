@@ -119,7 +119,8 @@
       h("div", { class: "wordmark", text: "KAVRELLE" }),
       h("nav", { "aria-label": "Site links" }, ...[["Help & FAQ", "/help"], ["Contact", "/contact"], ["About", "/about"],
         ["Terms", "/terms"], ["Privacy", "/privacy"]].map(([t, href]) => h("a", { href, text: t }))),
-      h("p", { text: "A demonstration store. No payment is taken and nothing is shipped." })));
+      h("p", { text: "A demonstration store. No payment is taken and nothing is shipped." }),
+      h("p", { class: "credit", text: "© 2026 Kavrelle. Created by Sheraz Ashraf. All rights reserved." })));
   }
 
   // ---------- navigation ----------
@@ -543,6 +544,8 @@
     const hash = location.hash.slice(1);
     if (hash.startsWith("shop-")) openShop(hash.slice(5), { noHash: true });
     else if (hash.startsWith("product-") && state.products.has(hash.slice(8))) { const p = state.products.get(hash.slice(8)); openShop(p.shop, { noHash: true }); openProduct(p.slug); }
+    const query = (params.get("q") || "").slice(0, 80);
+    if (query) { $("q").value = query; runSearch(query); $("q").focus(); } // search links from search engines
     document.body.dataset.ready = "true";
   }
 

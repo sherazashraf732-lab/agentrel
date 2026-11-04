@@ -87,3 +87,4 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
   .toc { position: static; }
   .hero.center { padding: 56px 0; }
 }
+.foot .credit { font-weight: 600; color: var(--ink-2); }

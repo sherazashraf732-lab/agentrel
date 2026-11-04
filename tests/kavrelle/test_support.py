@@ -313,7 +313,9 @@ def test_empty_model_answer_falls_back_to_the_facts(seeded: Engine) -> None:
         ),
     )
     out = ask(c, "ali@example.com 54000 where is A100?")
-    assert out["reply"].startswith("Order A100 is shipped.")
+    assert out["reply"].startswith(
+        "Your order A100 is shipped: it’s on its way to you."
+    )
 
 
 def test_vague_model_answer_is_replaced_by_the_facts(seeded: Engine) -> None:
@@ -328,3 +330,55 @@ def test_vague_model_answer_is_replaced_by_the_facts(seeded: Engine) -> None:
         out["reply"].startswith("Thanks Ali, you're verified.")
         and "A100 is shipped" in out["reply"]
     )
+
+
+@pytest.mark.parametrize(
+    "model_says",
+    [
+        # what the live model actually said in the demo, for a pending order
+        (
+            "Reply: I apologize, but it seems there was an error in your order. Since your order is pending, "
+            "we cannot process any changes."
+        ),
+        "Reply: Your order A101 has been shipped and is on its way.",  # wrong status
+        "Reply: Let me know if there is anything else.",  # says nothing about the order
+    ],
+)
+def test_answers_that_contradict_the_order_are_replaced_by_the_facts(
+    seeded: Engine, model_says: str
+) -> None:
+    c = _client(
+        seeded,
+        scripted(
+            [("verify_customer", ALI)],
+            [("get_order", {"order_id": "A101"})],
+            model_says,
+        ),
+    )
+    out = ask(c, "ali@example.com 54000 where is order A101?")
+    assert out["reply"].startswith("Your order A101 is pending:"), out["reply"]
+    assert "can still cancel" in out["reply"]
+
+
+def test_a_correct_answer_is_kept_word_for_word(seeded: Engine) -> None:
+    c = _client(seeded, scripted([("verify_customer", ALI)], [("get_order", {"order_id": "A101"})],
+                                 "Reply: Hi Ali! Order A101 is pending, so it hasn't shipped yet. Want me to cancel it?"))  # fmt: skip
+    out = ask(c, "ali@example.com 54000 where is A101?")
+    assert (
+        out["reply"]
+        == "Hi Ali! Order A101 is pending, so it hasn't shipped yet. Want me to cancel it?"
+    )
+
+
+def test_claimed_cancellation_that_the_store_refused_is_corrected(
+    seeded: Engine,
+) -> None:
+    c = _client(seeded, scripted([("verify_customer", ALI)], [("cancel_order", {"order_id": "A100"})],
+                                 "Reply: Done! Order A100 is now cancelled."))  # fmt: skip
+    out = ask(c, "ali@example.com 54000 cancel A100")
+    assert _status(seeded, "A100") == "shipped"
+    assert (
+        "cancelled" not in out["reply"].replace("can be cancelled", "")
+        or "can't" in out["reply"]
+    )
+    assert out["reply"].startswith("Sorry, I can't do that"), out["reply"]

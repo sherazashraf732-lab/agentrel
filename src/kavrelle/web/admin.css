@@ -101,3 +101,4 @@ svg text { font-family: var(--body); }
 .inbox .m { font-size: 13px; color: var(--muted); }
 .inbox .m strong { color: var(--ink); }
 .inbox p { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.side-foot .credit { display: block; margin-top: 6px; font-size: 11px; opacity: 0.7; }

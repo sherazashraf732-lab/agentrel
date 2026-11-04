@@ -381,7 +381,9 @@ def test_support_chat_cancels_an_order(page: Page, server: tuple[str, str]) -> N
     page.press("#chatInput", "Enter")
     expect(page.locator(".steps")).to_contain_text("Identity confirmed", timeout=20000)
     expect(page.locator(".steps")).to_contain_text("Order cancelled")
-    expect(page.locator(".bubble.bot").last).to_have_text("All done.")
+    expect(page.locator(".bubble.bot").last).to_have_text(
+        "Order A101 is now cancelled."
+    )  # a vague reply is replaced by the facts
     page.fill("#chatInput", "hello")
     page.press("#chatInput", "Enter")
     expect(page.locator(".bubble.bot").last).to_contain_text(

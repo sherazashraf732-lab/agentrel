@@ -45,7 +45,9 @@ def test_security_headers(client: TestClient) -> None:
 def test_page_obeys_its_own_security_policy() -> None:
     html = (WEB_DIR / "index.html").read_text("utf-8")
     assert 'style="' not in html, "inline style attributes are blocked by the CSP"
-    assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>", html), (
+    assert not re.search(
+        r"<script(?![^>]*\b(?:src=|type=\"application/ld\+json\"))[^>]*>", html
+    ), (  # JSON-LD is data, not code
         "inline scripts are blocked by the CSP"
     )
     assert not re.search(r"\son[a-z]+=", html), (

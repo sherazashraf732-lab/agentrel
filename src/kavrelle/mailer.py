@@ -47,6 +47,7 @@ class Mailer:
             max_workers=1, thread_name_prefix="kavrelle-mail"
         )
         self._lock = threading.Lock()
+        self._seq = 0
 
     def _message(self, email: Email) -> EmailMessage:
         msg = EmailMessage()
@@ -82,7 +83,10 @@ class Mailer:
             return
         with self._lock:
             self.outbox.mkdir(parents=True, exist_ok=True)
-            name = f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}.eml"
+            self._seq += (
+                1  # files sort in the order they were sent, even within one second
+            )
+            name = f"{time.strftime('%Y%m%d-%H%M%S')}-{self._seq:06d}-{uuid.uuid4().hex[:8]}.eml"
             (self.outbox / name).write_bytes(bytes(msg))
 
     def send(self, email: Email) -> Future[None]:

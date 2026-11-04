@@ -89,10 +89,15 @@ CSP = (
 )
 
 
-def _versioned_index(page: str = "index.html") -> str:
+def _public_base(request: Request) -> str:
+    """The site's public address for canonical links, Open Graph and the sitemap."""
+    return (os.environ.get("KAVRELLE_PUBLIC_URL") or str(request.base_url)).rstrip("/")
+
+
+def _versioned_index(page: str = "index.html", base: str = "") -> str:
     """index.html with ?v=<content hash> on our own CSS/JS, so a new release is never
-    hidden behind a stale browser cache."""
-    html = (WEB_DIR / page).read_text("utf-8")
+    hidden behind a stale browser cache. __BASE__ becomes the public site address."""
+    html = (WEB_DIR / page).read_text("utf-8").replace("__BASE__", base)
 
     def stamp(match: re.Match[str]) -> str:
         path = match.group(1)
@@ -342,10 +347,10 @@ def create_app(
                 headers={"Cache-Control": "no-cache", "X-Robots-Tag": "noindex"},
             )
 
-        def _page(name: str) -> Callable[[], HTMLResponse]:
-            def show() -> HTMLResponse:
+        def _page(name: str) -> Callable[[Request], HTMLResponse]:
+            def show(request: Request) -> HTMLResponse:
                 return HTMLResponse(
-                    _versioned_index(f"pages/{name}.html"),
+                    _versioned_index(f"pages/{name}.html", _public_base(request)),
                     headers={"Cache-Control": "no-cache"},
                 )
 
@@ -360,16 +365,37 @@ def create_app(
         def not_found(request: Request, exc: StarletteHTTPException) -> Response:
             path = request.url.path
             if exc.status_code == 404 and not path.startswith(("/api/", "/static/")):
-                return HTMLResponse(_versioned_index("pages/404.html"), status_code=404)
+                return HTMLResponse(
+                    _versioned_index("pages/404.html", _public_base(request)),
+                    status_code=404,
+                )
             return JSONResponse(
                 {"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers
             )
 
         @app.get("/", include_in_schema=False)
-        def index() -> HTMLResponse:
+        def index(request: Request) -> HTMLResponse:
             return HTMLResponse(
-                _versioned_index(), headers={"Cache-Control": "no-cache"}
+                _versioned_index("index.html", _public_base(request)),
+                headers={"Cache-Control": "no-cache"},
             )
+
+        @app.get("/robots.txt", include_in_schema=False)
+        def robots(request: Request) -> Response:
+            body = ("User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /reset\n\n"
+                    f"Sitemap: {_public_base(request)}/sitemap.xml\n")  # fmt: skip
+            return Response(body, media_type="text/plain")
+
+        @app.get("/sitemap.xml", include_in_schema=False)
+        def sitemap(request: Request) -> Response:
+            base = _public_base(request)
+            urls = "".join(
+                f"<url><loc>{base}{path}</loc><changefreq>{freq}</changefreq><priority>{prio}</priority></url>"
+                for path, freq, prio in [("/", "weekly", "1.0"), ("/help", "monthly", "0.6"), ("/about", "monthly", "0.5"),
+                                         ("/contact", "yearly", "0.5"), ("/terms", "yearly", "0.3"), ("/privacy", "yearly", "0.3")]
+            )  # fmt: skip
+            xml = f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>'
+            return Response(xml, media_type="application/xml")
 
     @app.get("/api/catalog", response_model=list[CatalogShop])
     def catalog_all(session: Session = Depends(get_session)) -> list[CatalogShop]:  # noqa: B008

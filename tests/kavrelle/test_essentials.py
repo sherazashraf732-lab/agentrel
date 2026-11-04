@@ -451,3 +451,79 @@ def test_mailer_uses_smtp_when_configured(
     m.send(mail.contact_receipt("Hina", "hina@example.com", "order")).result(timeout=10)
     assert len(sent) == 1 and sent[0]["From"] == "Kavrelle <hello@example.com>"
     assert list(tmp_path.iterdir()) == [], "SMTP mode writes nothing to disk"
+
+
+# ---------- SEO and credit ----------
+
+
+def test_search_engines_get_robots_and_a_sitemap(client: TestClient) -> None:
+    robots = client.get("/robots.txt")
+    assert robots.status_code == 200 and robots.headers["content-type"].startswith(
+        "text/plain"
+    )
+    assert "Disallow: /admin" in robots.text and "Disallow: /api/" in robots.text
+    assert "Sitemap: http://testserver/sitemap.xml" in robots.text
+    sm = client.get("/sitemap.xml")
+    assert sm.headers["content-type"].startswith("application/xml")
+    locs = re.findall(r"<loc>([^<]+)</loc>", sm.text)
+    assert (
+        locs[0] == "http://testserver/"
+        and "http://testserver/privacy" in locs
+        and len(locs) == 6
+    )
+    for loc in locs:
+        assert client.get(loc.removeprefix("http://testserver")).status_code == 200
+
+
+@pytest.mark.parametrize("path", ["/", *PAGES, "/missing-page"])
+def test_every_page_has_seo_tags_and_the_credit(client: TestClient, path: str) -> None:
+    html = client.get(path).text
+    assert "__BASE__" not in html
+    assert (
+        'name="description"' in html
+        and 'property="og:image" content="http://testserver/static/img/og.jpg"' in html
+    )
+    assert 'content="Sheraz Ashraf"' in html
+    if path in ("/reset", "/missing-page"):
+        assert 'content="noindex"' in html and "canonical" not in html
+    else:
+        canonical = "http://testserver" + (path if path != "/" else "/")
+        assert f'<link rel="canonical" href="{canonical}">' in html
+    if path != "/":
+        assert "Created by Sheraz Ashraf. All rights reserved." in html
+
+
+def test_home_page_structured_data_and_heading(client: TestClient) -> None:
+    import json
+
+    html = client.get("/").text
+    data = json.loads(
+        re.search(
+            r'<script type="application/ld\+json">(.+?)</script>', html, re.DOTALL
+        ).group(1)
+    )  # type: ignore[union-attr]
+    kinds = {node["@type"] for node in data["@graph"]}
+    assert (
+        kinds == {"WebSite", "OnlineStore"}
+        and data["@graph"][0]["author"]["name"] == "Sheraz Ashraf"
+    )
+    assert (
+        '<h1 class="sr-only">' in html
+        and "Created by Sheraz Ashraf. All rights reserved." in html
+    )
+    assert client.get("/static/img/og.jpg").headers["content-type"] == "image/jpeg"
+    assert "Created by Sheraz Ashraf" in client.get("/admin").text
+
+
+def test_public_url_setting_is_used_for_links(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("KAVRELLE_PUBLIC_URL", "https://kavrelle.example.com/")
+    assert (
+        '<link rel="canonical" href="https://kavrelle.example.com/help">'
+        in client.get("/help").text
+    )
+    assert (
+        "Sitemap: https://kavrelle.example.com/sitemap.xml"
+        in client.get("/robots.txt").text
+    )
