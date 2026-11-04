@@ -384,6 +384,7 @@
     camera.position.copy(target.pos);
 
     function updateTarget() {
+      if (cam.mode === "transit") return;
       if (cam.mode === "concourse") {
         const y = (cam.floor - 1) * FLOOR_H;
         target.pos.set(0, y + 2.1, cam.z);
@@ -408,6 +409,7 @@
       const r = canvas.getBoundingClientRect();
       ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
       ray.setFromCamera(ndc, camera);
+      if (cam.mode === "transit") return null;
       const candidates = cam.mode === "shop" ? shops.get(cam.shop).frames.flatMap((f) => f.children) : storefrontMeshes;
       const hit = ray.intersectObjects(candidates, false).find((h) => h.distance < 40);
       if (!hit) return null;
@@ -464,7 +466,7 @@
     canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); running = false; if (onContextLost) onContextLost(); });
 
     // ---------- render loop (on demand) ----------
-    let dirty = true, running = true, raf = 0;
+    let dirty = true, running = true, raf = 0, waypoint = null;
     function invalidate() { dirty = true; }
     const clock = new T.Clock();
     function frame() {
@@ -477,6 +479,9 @@
         camera.position.lerp(target.pos, k); look.lerp(target.look, k); moving = true;
       }
       camera.lookAt(look);
+      if (waypoint && camera.position.distanceTo(target.pos) < 0.8) {
+        cam.mode = "shop"; cam.shop = waypoint; waypoint = null; updateTarget();
+      }
       for (const { frames } of shops.values()) {
         for (const f of frames) {
           const want = f === hovered ? 1 : 0;
@@ -502,14 +507,29 @@
     // ---------- public controller ----------
     const controller = {
       goConcourse(floor) {
+        waypoint = null;
+        if (cam.mode !== "concourse") {
+          const here = cam.shop ? slot(shops.get(cam.shop).shop) : null;
+          if (here) cam.z = here.z + 2;
+        }
         cam.mode = "concourse"; cam.shop = null; cam.yaw = 0; cam.pitch = 0;
         if (floor) cam.floor = floor;
         updateTarget();
       },
       goShop(slug) {
         if (!shops.has(slug)) return false;
-        const { shop } = shops.get(slug);
-        cam.mode = "shop"; cam.shop = slug; cam.floor = shop.floor; cam.yaw = 0; cam.pitch = 0;
+        const { shop, group } = shops.get(slug);
+        const s = slot(shop);
+        const via = new T.Vector3(0, s.y + 2.1, s.z);
+        cam.floor = shop.floor; cam.yaw = 0; cam.pitch = 0;
+        if (camera.position.distanceTo(via) > 3) {
+          // walk the concourse to the shop's door first, never through walls
+          cam.mode = "transit"; cam.shop = null; waypoint = slug;
+          target.pos.copy(via);
+          target.look.copy(group.localToWorld(new T.Vector3(9.8, 2.6, 0)));
+          invalidate(); return true;
+        }
+        waypoint = null; cam.mode = "shop"; cam.shop = slug;
         updateTarget(); return true;
       },
       walk,
