@@ -97,8 +97,12 @@ def evaluate_store(
         chat = ollama_chat(config.model.removeprefix("ollama/"))
     tasks = store_tasks(SCENARIOS)
 
-    def run(fault: float = 0.0, perturbed: bool = False, task_list: list[Task] = tasks,
-            n_runs: int = config.n_runs) -> list[RunRecord]:
+    def run(
+        fault: float = 0.0,
+        perturbed: bool = False,
+        task_list: list[Task] = tasks,
+        n_runs: int = config.n_runs,
+    ) -> list[RunRecord]:
         factory = store_env_factory(SCENARIOS, fault, perturbed, config.seed)
         assert chat is not None
         agent = make_tool_agent(chat, factory, POLICY)
@@ -126,9 +130,13 @@ def evaluate(
 ) -> tuple[ReliabilityReport, dict[str, list[RunRecord]]]:
     if config.environment == "store":
         return evaluate_store(config)
-    tasks = [Task(id=t.id, prompt=t.prompt, correct_answer=t.answer) for t in config.tasks]
+    tasks = [
+        Task(id=t.id, prompt=t.prompt, correct_answer=t.answer) for t in config.tasks
+    ]
     runs: dict[str, list[RunRecord]] = {
-        "baseline": run_agent(build_agent(config, complete=complete), tasks, config.n_runs)
+        "baseline": run_agent(
+            build_agent(config, complete=complete), tasks, config.n_runs
+        )
     }
     if config.fault_probability:
         faulty = build_agent(config, config.fault_probability, complete)

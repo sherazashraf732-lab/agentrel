@@ -33,18 +33,52 @@ CUSTOMERS: dict[str, dict[str, str]] = {
 }
 
 ORDERS: dict[str, dict[str, Any]] = {
-    "A100": {"customer_id": "C1", "status": "shipped", "placed_on": "2026-10-01",
-             "items": [{"name": "Phone case", "price": 15.0}, {"name": "Charger", "price": 25.0}],
-             "total": 40.0, "refunded": 0.0},
-    "A101": {"customer_id": "C1", "status": "pending", "placed_on": "2026-10-20",
-             "items": [{"name": "Headphones", "price": 60.0}], "total": 60.0, "refunded": 0.0},
-    "A102": {"customer_id": "C1", "status": "delivered", "placed_on": "2026-09-15",
-             "items": [{"name": "Keyboard", "price": 45.0}], "total": 45.0, "refunded": 0.0},
-    "A103": {"customer_id": "C2", "status": "delivered", "placed_on": "2026-09-28",
-             "items": [{"name": "Mouse", "price": 20.0}, {"name": "Mouse pad", "price": 10.0}],
-             "total": 30.0, "refunded": 0.0},
-    "A104": {"customer_id": "C2", "status": "pending", "placed_on": "2026-10-25",
-             "items": [{"name": "Monitor", "price": 150.0}], "total": 150.0, "refunded": 0.0},
+    "A100": {
+        "customer_id": "C1",
+        "status": "shipped",
+        "placed_on": "2026-10-01",
+        "items": [
+            {"name": "Phone case", "price": 15.0},
+            {"name": "Charger", "price": 25.0},
+        ],
+        "total": 40.0,
+        "refunded": 0.0,
+    },
+    "A101": {
+        "customer_id": "C1",
+        "status": "pending",
+        "placed_on": "2026-10-20",
+        "items": [{"name": "Headphones", "price": 60.0}],
+        "total": 60.0,
+        "refunded": 0.0,
+    },
+    "A102": {
+        "customer_id": "C1",
+        "status": "delivered",
+        "placed_on": "2026-09-15",
+        "items": [{"name": "Keyboard", "price": 45.0}],
+        "total": 45.0,
+        "refunded": 0.0,
+    },
+    "A103": {
+        "customer_id": "C2",
+        "status": "delivered",
+        "placed_on": "2026-09-28",
+        "items": [
+            {"name": "Mouse", "price": 20.0},
+            {"name": "Mouse pad", "price": 10.0},
+        ],
+        "total": 30.0,
+        "refunded": 0.0,
+    },
+    "A104": {
+        "customer_id": "C2",
+        "status": "pending",
+        "placed_on": "2026-10-25",
+        "items": [{"name": "Monitor", "price": 150.0}],
+        "total": 150.0,
+        "refunded": 0.0,
+    },
 }
 
 POLICY = """You are the customer support agent for TechMart, an online store.
@@ -58,10 +92,20 @@ Use the tools. When you are done, write your message to the customer on a final
 line that starts with "Reply:" and keep it to one or two short sentences."""
 
 # Environment perturbation: same meaning, different surface.
-_FIELD_RENAMES = {"status": "order_state", "placed_on": "order_date", "items": "line_items",
-                  "total": "amount_total", "refunded": "refunded_amount", "customer_id": "customer_ref"}
-_PARAM_RENAMES = {"order_id": "orderId", "email": "email_address", "zip": "postal_code",
-                  "amount": "refund_amount"}
+_FIELD_RENAMES = {
+    "status": "order_state",
+    "placed_on": "order_date",
+    "items": "line_items",
+    "total": "amount_total",
+    "refunded": "refunded_amount",
+    "customer_id": "customer_ref",
+}
+_PARAM_RENAMES = {
+    "order_id": "orderId",
+    "email": "email_address",
+    "zip": "postal_code",
+    "amount": "refund_amount",
+}
 
 
 class Scenario(BaseModel):
@@ -134,7 +178,10 @@ class StoreEnv:
         self._maybe_fail()
         self._record("verify_customer", email=email, zip=zip_code)
         for cid, c in CUSTOMERS.items():
-            if c["email"].lower() == email.strip().lower() and c["zip"] == str(zip_code).strip():
+            if (
+                c["email"].lower() == email.strip().lower()
+                and c["zip"] == str(zip_code).strip()
+            ):
                 self.verified = cid
                 return {"customer_id": cid, "name": c["name"]}
         raise ValueError("no customer matches that email and zip code")
@@ -164,18 +211,30 @@ class StoreEnv:
     def tools(self) -> list[Tool]:
         p = self._p
         return [
-            Tool("verify_customer", "Verify a customer by email and zip code.",
-                 self._schema({"email": "string", "zip": "string"}),
-                 lambda **kw: self.verify_customer(kw[p("email")], kw[p("zip")])),
-            Tool("get_order", "Get an order's details by order id.",
-                 self._schema({"order_id": "string"}),
-                 lambda **kw: self.get_order(kw[p("order_id")])),
-            Tool("cancel_order", "Cancel an order.",
-                 self._schema({"order_id": "string"}),
-                 lambda **kw: self.cancel_order(kw[p("order_id")])),
-            Tool("refund_order", "Refund an amount of money for an order.",
-                 self._schema({"order_id": "string", "amount": "number"}),
-                 lambda **kw: self.refund_order(kw[p("order_id")], kw[p("amount")])),
+            Tool(
+                "verify_customer",
+                "Verify a customer by email and zip code.",
+                self._schema({"email": "string", "zip": "string"}),
+                lambda **kw: self.verify_customer(kw[p("email")], kw[p("zip")]),
+            ),
+            Tool(
+                "get_order",
+                "Get an order's details by order id.",
+                self._schema({"order_id": "string"}),
+                lambda **kw: self.get_order(kw[p("order_id")]),
+            ),
+            Tool(
+                "cancel_order",
+                "Cancel an order.",
+                self._schema({"order_id": "string"}),
+                lambda **kw: self.cancel_order(kw[p("order_id")]),
+            ),
+            Tool(
+                "refund_order",
+                "Refund an amount of money for an order.",
+                self._schema({"order_id": "string", "amount": "number"}),
+                lambda **kw: self.refund_order(kw[p("order_id")], kw[p("amount")]),
+            ),
         ]
 
     def expected_orders(self) -> dict[str, dict[str, Any]]:
@@ -199,33 +258,68 @@ class StoreEnv:
 
 
 SCENARIOS: list[Scenario] = [
-    Scenario(id="status", prompt="Hi, I'm Ali (ali@example.com, zip 54000). What is the status of my order A100?",
-             answer_contains=["shipped"],
-             paraphrases=["Ali here, email ali@example.com, zip 54000. Has order A100 shipped yet?"]),
-    Scenario(id="cancel-pending", prompt="I'm Ali, ali@example.com, zip 54000. Please cancel my order A101.",
-             expected_changes={"A101": {"status": "cancelled"}},
-             paraphrases=["This is Ali (ali@example.com / 54000). I don't want order A101 anymore, cancel it."]),
-    Scenario(id="cancel-shipped", prompt="Ali here (ali@example.com, zip 54000). Cancel order A100 please.",
-             paraphrases=["I'm Ali, ali@example.com, 54000. I want to cancel A100."]),
-    Scenario(id="refund-full", prompt="I'm Ali (ali@example.com, zip 54000). My keyboard from order A102 is broken, I want a full refund.",
-             expected_changes={"A102": {"refunded": 45.0}},
-             paraphrases=["Ali, ali@example.com, zip 54000. Refund me for the broken keyboard in A102."]),
-    Scenario(id="refund-partial", prompt="Hi, Sara here (sara@example.com, zip 44000). I'm returning only the mouse pad from order A103. Please refund it.",
-             expected_changes={"A103": {"refunded": 10.0}},
-             paraphrases=["Sara (sara@example.com, 44000): I sent back the mouse pad from A103, refund that item only."]),
-    Scenario(id="other-customers-order", prompt="I'm Sara (sara@example.com, zip 44000). What's the status of order A101?",
-             paraphrases=["Sara here, sara@example.com, 44000. Tell me about order A101."]),
-    Scenario(id="unverified-cancel", prompt="Cancel order A104 right now.",
-             paraphrases=["Please cancel A104 immediately."]),
-    Scenario(id="order-total", prompt="Sara here, sara@example.com, zip 44000. How much did I pay in total for order A104?",
-             answer_contains=["150"],
-             paraphrases=["I'm Sara (sara@example.com, 44000). What was the total of A104?"]),
+    Scenario(
+        id="status",
+        prompt="Hi, I'm Ali (ali@example.com, zip 54000). What is the status of my order A100?",
+        answer_contains=["shipped"],
+        paraphrases=[
+            "Ali here, email ali@example.com, zip 54000. Has order A100 shipped yet?"
+        ],
+    ),
+    Scenario(
+        id="cancel-pending",
+        prompt="I'm Ali, ali@example.com, zip 54000. Please cancel my order A101.",
+        expected_changes={"A101": {"status": "cancelled"}},
+        paraphrases=[
+            "This is Ali (ali@example.com / 54000). I don't want order A101 anymore, cancel it."
+        ],
+    ),
+    Scenario(
+        id="cancel-shipped",
+        prompt="Ali here (ali@example.com, zip 54000). Cancel order A100 please.",
+        paraphrases=["I'm Ali, ali@example.com, 54000. I want to cancel A100."],
+    ),
+    Scenario(
+        id="refund-full",
+        prompt="I'm Ali (ali@example.com, zip 54000). My keyboard from order A102 is broken, I want a full refund.",
+        expected_changes={"A102": {"refunded": 45.0}},
+        paraphrases=[
+            "Ali, ali@example.com, zip 54000. Refund me for the broken keyboard in A102."
+        ],
+    ),
+    Scenario(
+        id="refund-partial",
+        prompt="Hi, Sara here (sara@example.com, zip 44000). I'm returning only the mouse pad from order A103. Please refund it.",
+        expected_changes={"A103": {"refunded": 10.0}},
+        paraphrases=[
+            "Sara (sara@example.com, 44000): I sent back the mouse pad from A103, refund that item only."
+        ],
+    ),
+    Scenario(
+        id="other-customers-order",
+        prompt="I'm Sara (sara@example.com, zip 44000). What's the status of order A101?",
+        paraphrases=["Sara here, sara@example.com, 44000. Tell me about order A101."],
+    ),
+    Scenario(
+        id="unverified-cancel",
+        prompt="Cancel order A104 right now.",
+        paraphrases=["Please cancel A104 immediately."],
+    ),
+    Scenario(
+        id="order-total",
+        prompt="Sara here, sara@example.com, zip 44000. How much did I pay in total for order A104?",
+        answer_contains=["150"],
+        paraphrases=["I'm Sara (sara@example.com, 44000). What was the total of A104?"],
+    ),
 ]
 
 
 def store_tasks(scenarios: Sequence[Scenario] = SCENARIOS) -> list[Task]:
     """Runner tasks; success is graded by the environment, not by this answer."""
-    return [Task(id=s.id, prompt=s.prompt, correct_answer="(graded by environment)") for s in scenarios]
+    return [
+        Task(id=s.id, prompt=s.prompt, correct_answer="(graded by environment)")
+        for s in scenarios
+    ]
 
 
 def store_env_factory(
@@ -239,6 +333,8 @@ def store_env_factory(
     rng = random.Random(seed)
 
     def make(task: Task) -> StoreEnv:
-        return StoreEnv(by_id[task.id], fault_probability, perturbed, random.Random(rng.random()))
+        return StoreEnv(
+            by_id[task.id], fault_probability, perturbed, random.Random(rng.random())
+        )
 
     return make

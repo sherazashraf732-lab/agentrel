@@ -34,6 +34,7 @@ def run(
 
 # ---------- distances ----------
 
+
 def test_jsd_identical_is_zero() -> None:
     assert jensen_shannon(["a", "b"], ["b", "a"]) == pytest.approx(0.0)
 
@@ -61,6 +62,7 @@ def test_levenshtein_examples() -> None:
 
 
 # ---------- trajectory consistency ----------
+
 
 def test_same_tools_different_order_what_but_not_when() -> None:
     # the paper's "what but not when" pattern
@@ -91,6 +93,7 @@ def test_none_when_single_run_per_task() -> None:
 
 
 # ---------- multi-resource consistency ----------
+
 
 def test_resource_uses_calls_and_tokens_when_reported() -> None:
     # duration constant (CV 0), calls constant (CV 0), tokens 100 vs 300 (CV 0.5)

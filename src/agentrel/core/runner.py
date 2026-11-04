@@ -75,9 +75,7 @@ def _is_correct(output: str, expected: str) -> bool:
     return _normalize(output) == _normalize(expected)
 
 
-def run_agent(
-    agent: Agent, tasks: Sequence[Task], n_runs: int = 5
-) -> list[RunRecord]:
+def run_agent(agent: Agent, tasks: Sequence[Task], n_runs: int = 5) -> list[RunRecord]:
     """Run `agent` on every task `n_runs` times. Agent crashes are recorded."""
     if n_runs < 1:
         raise ValueError(f"n_runs must be at least 1, got {n_runs}")

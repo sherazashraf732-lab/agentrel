@@ -32,9 +32,7 @@ def brier_predictability(records: Sequence[RunRecord]) -> float:
     return 1.0 - statistics.fmean((c - y) ** 2 for c, y in pairs)
 
 
-def calibration_predictability(
-    records: Sequence[RunRecord], n_bins: int = 10
-) -> float:
+def calibration_predictability(records: Sequence[RunRecord], n_bins: int = 10) -> float:
     """P_cal = 1 - ECE, with equal-width confidence bins."""
     if n_bins < 1:
         raise ValueError(f"n_bins must be at least 1, got {n_bins}")

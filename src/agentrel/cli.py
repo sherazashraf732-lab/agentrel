@@ -23,7 +23,9 @@ def run(
     config_path: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
     min_overall: Annotated[
         float | None,
-        typer.Option(help="Exit with code 1 if overall reliability is below this (for CI)."),
+        typer.Option(
+            help="Exit with code 1 if overall reliability is below this (for CI)."
+        ),
     ] = None,
 ) -> None:
     """Run the agent described in CONFIG_PATH and print a reliability report."""
@@ -34,7 +36,9 @@ def run(
     typer.echo(format_report(report))
     typer.echo(f"\nSaved runs and report.json to {out.resolve()}")
 
-    if min_overall is not None and (report.overall is None or report.overall < min_overall):
+    if min_overall is not None and (
+        report.overall is None or report.overall < min_overall
+    ):
         typer.echo(f"FAIL: overall reliability below {min_overall}", err=True)
         raise typer.Exit(code=1)
 
@@ -50,5 +54,7 @@ def serve(
 
     from agentrel.web.app import create_app
 
-    typer.echo(f"Open http://{host}:{port}  (dashboard: http://{host}:{port}/dashboard)")
+    typer.echo(
+        f"Open http://{host}:{port}  (dashboard: http://{host}:{port}/dashboard)"
+    )
     uvicorn.run(create_app(results_dir=results_dir), host=host, port=port)

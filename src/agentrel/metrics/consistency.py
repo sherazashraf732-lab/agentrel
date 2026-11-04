@@ -40,16 +40,27 @@ def _cv(values: list[float]) -> float:
     return statistics.pstdev(values) / (statistics.fmean(values) + EPS)
 
 
-def resource_consistency(records: Sequence[RunRecord]) -> float:
-    """C_res = exp(-mean over resource types of CV).
+def resource_consistency(records: Sequence[RunRecord]) -> float | None:
+    """C_res = exp(-mean over resource types of CV), conditioned on success.
 
-    Resources: run duration always; model calls and tokens when every run
-    reports them (tool agents do, plain Q&A agents don't).
+    Paper (Table 2 and Appendix C.1): per task, the coefficient of variation of each
+    resource across the K runs, computed over the *successful* runs only (a failed
+    run that stops early is not a resource "inconsistency"), averaged over resource
+    types before the exponential. Resources: run time, model calls and tokens (the
+    cost of a local model) when every run reports them.
 
-    Our choices where the paper is not explicit: for each resource, CV is
-    computed per task (population std) and averaged across tasks.
+    Tasks with fewer than two successful runs have no variance and are skipped.
+    Returns None when no task has two successful runs.
     """
-    groups = _group_by_task(records)
+    if not records:
+        raise ValueError("no runs")
+    groups = {
+        task: [r for r in runs if r.is_correct]
+        for task, runs in _group_by_task(records).items()
+    }
+    groups = {task: runs for task, runs in groups.items() if len(runs) >= 2}
+    if not groups:
+        return None
     getters: list[Callable[[RunRecord], float]] = [lambda r: r.duration_s]
     if all(r.api_calls is not None for r in records):
         getters.append(lambda r: float(r.api_calls or 0))

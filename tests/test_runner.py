@@ -114,6 +114,7 @@ def test_save_and_load_roundtrip(tmp_path: Path) -> None:
     save_records(records, path)
     assert load_records(path) == records
 
+
 @pytest.mark.parametrize("text", ["paris", "PARIS", "Paris.", " Paris! "])
 def test_correctness_ignores_case_and_trailing_punctuation(text: str) -> None:
     def agent(task: Task) -> AgentOutput:
