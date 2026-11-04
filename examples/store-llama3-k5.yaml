@@ -1,0 +1,9 @@
+# The paper's exact setting: K = 5 runs per task (Rabanser et al., Sec. 4), on the
+# TechMart store with the local model behind Kavrelle Support. About 1 hour on a CPU laptop.
+name: llama3.2-3b-store-k5
+model: ollama/llama3.2:3b
+environment: store
+n_runs: 5
+fault_probability: 0.2
+seed: 11
+output_dir: agentrel-results/llama3.2-3b-store-k5
