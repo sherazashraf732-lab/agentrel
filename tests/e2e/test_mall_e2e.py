@@ -28,7 +28,7 @@ from kavrelle import migrate
 from kavrelle.api import create_app
 from kavrelle.config import Settings
 from kavrelle.db import make_engine, make_session_factory, session_scope
-from kavrelle.models import Product, Variant
+from kavrelle.models import Customer, Product, Variant
 from kavrelle.seed import seed
 
 
@@ -60,6 +60,19 @@ def rule_based_chat(messages: list[dict], tools: list[dict]) -> ChatReply:  # ty
         tool_calls=[],
         tokens=1,
     )
+
+
+def fake_evaluator(n_runs, tick):  # type: ignore[no-untyped-def]
+    """Stands in for the hour-long model evaluation in browser tests."""
+    tick()
+    report = {k: 0.8 for k in ["consistency_outcome", "consistency_trajectory_distribution", "consistency_trajectory_sequence",
+              "consistency_resource", "robustness_fault", "robustness_env", "robustness_prompt", "predictability_calibration",
+              "predictability_auroc", "predictability_brier", "safety_compliance", "safety_harm", "consistency",
+              "predictability", "robustness", "safety", "overall"]}  # fmt: skip
+    report["accuracy"] = 0.5
+    rec = {"task_id": "status", "run_index": 0, "is_correct": True, "duration_s": 20, "tokens": 900, "confidence": 0.9,
+           "violations": [{"constraint": "identity_verification", "severity": "high", "detail": "looked up A100 unverified"}]}  # fmt: skip
+    return report, {"baseline": [rec], "fault": [rec]}
 
 
 BROWSER_ARGS = [
@@ -97,7 +110,12 @@ def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple[str, str]
     port = _free_port()
     srv = uvicorn.Server(
         uvicorn.Config(
-            create_app(Settings(), engine=engine, chat_factory=lambda: rule_based_chat),
+            create_app(
+                Settings(),
+                engine=engine,
+                chat_factory=lambda: rule_based_chat,
+                evaluator=fake_evaluator,
+            ),
             host="127.0.0.1",
             port=port,
             log_level="warning",
@@ -384,3 +402,33 @@ def test_support_chat_refuses_someone_elses_order(
     expect(page.locator(".bubble.bot").last).to_have_text(
         "Sorry, I cannot do that.", timeout=20000
     )
+
+
+def test_admin_console_runs_an_evaluation_and_shows_12_metrics(
+    page: Page, server: tuple[str, str]
+) -> None:
+    base, url = server
+    page.goto(f"{base}/admin#lab")
+    expect(page.locator("#gate")).to_be_visible()
+    page.request.post(f"{base}/api/auth/signup", data={"name": "Owner", "email": "owner@example.com",
+                                                        "zip_code": "54000", "password": "console2026"})  # fmt: skip
+    engine = make_engine(url)
+    with session_scope(make_session_factory(engine)) as s:
+        s.execute(
+            update(Customer)
+            .where(Customer.email == "owner@example.com")
+            .values(is_admin=True)
+        )
+    engine.dispose()
+    page.fill("#gEmail", "owner@example.com")
+    page.fill("#gPass", "console2026")
+    page.click("#gSubmit")
+    expect(page.locator("#v-lab")).to_be_visible()
+    page.click("#runStart")
+    expect(page.locator(".metric")).to_have_count(12, timeout=30000)
+    expect(page.locator('.metric[data-key="R_fault"] .val')).to_contain_text("0.80")
+    expect(page.locator("#violTable")).to_contain_text("looked up A100 unverified")
+    page.click('button[data-view="chats"]')
+    expect(page.locator("#v-chats")).to_be_visible()
+    page.click('button[data-view="overview"]')
+    expect(page.locator(".kpi")).to_have_count(6)

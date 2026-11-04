@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Kavrelle Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@800;900&display=swap">
+<link rel="stylesheet" href="/static/styles.css">
+<link rel="stylesheet" href="/static/admin.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f1a16'/%3E%3Ctext x='16' y='23' font-family='Arial' font-weight='900' font-size='20' text-anchor='middle' fill='%23e2552d'%3EK%3C/text%3E%3C/svg%3E">
+</head>
+<body class="console">
+
+<aside class="side">
+  <div class="side-brand"><span class="brand-mark" aria-hidden="true">K</span><span class="wordmark">KAVREL<span>LE</span></span><small>Console</small></div>
+  <nav class="side-nav" aria-label="Console">
+    <button type="button" data-view="overview" aria-current="true">Overview</button>
+    <button type="button" data-view="lab">Reliability Lab</button>
+    <button type="button" data-view="chats">Conversations</button>
+  </nav>
+  <div class="side-foot"><a href="/" class="side-link">← Back to the mall</a><span id="who"></span></div>
+</aside>
+
+<main class="main" id="main">
+  <section id="gate" class="gate" hidden>
+    <form class="dlg card-like" id="gateForm" novalidate>
+      <h2>Console sign in</h2>
+      <p class="sub" id="gateText">Sign in with an admin account.</p>
+      <div class="field"><label for="gEmail">Email</label><input id="gEmail" type="email" autocomplete="email" required></div>
+      <div class="field"><label for="gPass">Password</label><input id="gPass" type="password" autocomplete="current-password" required></div>
+      <p class="form-error" id="gError" role="alert" hidden></p>
+      <button class="btn primary big" type="submit" id="gSubmit">Sign in</button>
+      <p class="hint-text">Make an account admin from the project folder: <code>uv run kavrelle make-admin you@example.com</code></p>
+    </form>
+  </section>
+
+  <section id="v-overview" class="view" hidden>
+    <header class="v-head"><div><div class="eyebrow">Today</div><h1>Overview</h1></div></header>
+    <div class="kpis" id="kpis"></div>
+    <div class="grid2">
+      <article class="panel"><h3>Orders by status</h3><div id="ordersChart"></div></article>
+      <article class="panel"><h3>Latest reliability score</h3><div id="lastRun"></div></article>
+    </div>
+  </section>
+
+  <section id="v-lab" class="view" hidden>
+    <header class="v-head">
+      <div><div class="eyebrow">Rabanser et al., ICML 2026 · 12 metrics</div><h1>Reliability Lab</h1></div>
+      <div class="v-actions">
+        <label class="sr-only" for="runPick">Evaluation</label>
+        <select id="runPick" class="select"></select>
+        <label class="sr-only" for="runN">Repeats</label>
+        <select id="runN" class="select" title="How many times each scenario is repeated">
+          <option value="1">k = 1</option><option value="2">k = 2</option><option value="3" selected>k = 3</option><option value="5">k = 5</option>
+        </select>
+        <button class="btn primary" type="button" id="runStart">Run evaluation</button>
+      </div>
+    </header>
+    <div class="progress-card" id="progress" hidden>
+      <div class="spread"><strong id="progText">Evaluating…</strong><span id="progTime"></span></div>
+      <div class="progress wide"><i id="progBar"></i></div>
+      <p class="hint-text">The assistant answers 8 customer scenarios, repeated, under 4 conditions. On a laptop this takes a while; you can leave this page.</p>
+    </div>
+    <div id="labEmpty" class="panel empty-state" hidden>No evaluations yet. Press “Run evaluation”, or import one with <code>uv run kavrelle import-run agentrel-results/&lt;folder&gt;</code>.</div>
+    <div id="labBody" hidden>
+      <div class="hero-lab">
+        <div class="ring-wrap" id="ring"></div>
+        <div class="groups" id="groups"></div>
+        <div class="radar-wrap" id="radar"></div>
+      </div>
+      <h2 class="sec-title">The 12 metrics</h2>
+      <div class="metric-groups" id="metrics"></div>
+      <div class="grid2">
+        <article class="panel"><h3>Scenario results by condition</h3><div class="table-wrap" id="taskTable"></div></article>
+        <article class="panel"><h3>Safety violations (all conditions)</h3><div id="violChart"></div><div class="table-wrap" id="violTable"></div></article>
+      </div>
+    </div>
+  </section>
+
+  <section id="v-chats" class="view" hidden>
+    <header class="v-head"><div><div class="eyebrow">Kavrelle Support</div><h1>Conversations</h1></div></header>
+    <div class="chats-layout">
+      <ul class="chat-list" id="chatList"></ul>
+      <article class="panel chat-detail" id="chatDetail"><p class="sub">Choose a conversation to see every step the assistant took.</p></article>
+    </div>
+  </section>
+</main>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script src="/static/js/api.js"></script>
+<script src="/static/js/admin.js"></script>
+</body>
+</html>

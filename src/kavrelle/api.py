@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -16,11 +18,23 @@ from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from kavrelle import auth
+from kavrelle import lab as labmod
 from kavrelle import shop as rules
 from kavrelle import support as desk
 from kavrelle.config import Settings
 from kavrelle.db import make_engine, make_session_factory, ping, session_scope
-from kavrelle.models import MAX_LINE_QUANTITY, Cart, Customer, Order, Product, Shop
+from kavrelle.models import (
+    MAX_LINE_QUANTITY,
+    Cart,
+    Conversation,
+    Customer,
+    EvalRun,
+    Order,
+    Product,
+    Shop,
+)
+from kavrelle.models import Message as MessageRow
+from kavrelle.models import ToolCall as ToolCallRow
 
 
 class VariantOut(BaseModel):
@@ -71,10 +85,10 @@ CSP = (
 )
 
 
-def _versioned_index() -> str:
+def _versioned_index(page: str = "index.html") -> str:
     """index.html with ?v=<content hash> on our own CSS/JS, so a new release is never
     hidden behind a stale browser cache."""
-    html = (WEB_DIR / "index.html").read_text("utf-8")
+    html = (WEB_DIR / page).read_text("utf-8")
 
     def stamp(match: re.Match[str]) -> str:
         path = match.group(1)
@@ -83,6 +97,10 @@ def _versioned_index() -> str:
         return f'"{path}?v={digest}"'
 
     return re.sub(r'"(/static/[^"?]+\.(?:js|css))"', stamp, html)
+
+
+class StartRunIn(BaseModel):
+    n_runs: int = Field(default=3, ge=1, le=5)
 
 
 class CartLineOut(BaseModel):
@@ -233,12 +251,21 @@ def create_app(
     settings: Settings | None = None,
     engine: Engine | None = None,
     chat_factory: Callable[[], desk.ChatFn] | None = None,
+    evaluator: labmod.Evaluator | None = None,
 ) -> FastAPI:
     settings = settings or Settings.load()
     engine = engine or make_engine(settings.database_url)
     factory: sessionmaker[Session] = make_session_factory(engine)
     limiter = auth.RateLimiter(limit=5, window=300)
     support = desk.SupportDesk(factory, chat_factory or desk.ollama_chat_factory)
+    lab = labmod.Lab(
+        factory,
+        evaluator
+        or labmod.agentrel_evaluator(
+            os.environ.get("KAVRELLE_SUPPORT_MODEL", "llama3.2:3b")
+        ),
+        label="Support Assistant v1",
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -276,6 +303,13 @@ def create_app(
 
     if WEB_DIR.is_dir():
         app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
+
+        @app.get("/admin", include_in_schema=False)
+        def admin_page() -> HTMLResponse:
+            return HTMLResponse(
+                _versioned_index("admin.html"),
+                headers={"Cache-Control": "no-cache", "X-Robots-Tag": "noindex"},
+            )
 
         @app.get("/", include_in_schema=False)
         def index() -> HTMLResponse:
@@ -481,5 +515,144 @@ def create_app(
     def conversation(conversation_id: str) -> list[ChatLine]:
         return [ChatLine(**m) for m in support.history(conversation_id)]
 
+    # ---------- admin console ----------
+    def _admin(request: Request, s: Session) -> Customer:
+        c = _me(request, s)
+        if c is None:
+            raise HTTPException(status_code=401, detail="Please sign in")
+        if not c.is_admin:
+            raise HTTPException(status_code=403, detail="Admins only")
+        return c
+
+    def _require_admin(request: Request) -> None:
+        with session_scope(factory) as s:
+            _admin(request, s)
+
+    @app.get("/api/admin/overview")
+    def admin_overview(request: Request) -> dict[str, Any]:
+        with session_scope(factory) as s:
+            _admin(request, s)
+            by_status = dict(
+                s.execute(
+                    select(Order.status, func.count()).group_by(Order.status)
+                ).all()
+            )
+            revenue = s.scalar(
+                select(func.coalesce(func.sum(Order.total_cents - Order.refunded_cents), 0))
+                .where(Order.status != "cancelled")
+            )  # fmt: skip
+            last = s.scalar(
+                select(EvalRun)
+                .where(EvalRun.status == "done")
+                .order_by(EvalRun.id.desc())
+            )
+            return {
+                "orders": sum(by_status.values()),
+                "orders_by_status": by_status,
+                "revenue_cents": int(revenue or 0),
+                "customers": s.scalar(select(func.count(Customer.id))),
+                "accounts": s.scalar(
+                    select(func.count(Customer.id)).where(
+                        Customer.password_hash.is_not(None)
+                    )
+                ),
+                "conversations": s.scalar(select(func.count(Conversation.id))),
+                "messages": s.scalar(select(func.count(MessageRow.id))),
+                "blocked_actions": s.scalar(
+                    select(func.count(ToolCallRow.id)).where(ToolCallRow.ok.is_(False))
+                ),
+                "last_run": _run_summary(last) if last else None,
+            }
+
+    def _run_summary(r: EvalRun) -> dict[str, Any]:
+        rep = (r.report or {}).get("report", {})
+        return {
+            "id": r.id, "name": r.name, "assistant": r.assistant_label, "status": r.status, "n_runs": r.n_runs,
+            "created_at": r.created_at.isoformat(), "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+            "overall": rep.get("overall"), "accuracy": rep.get("accuracy"),
+        }  # fmt: skip
+
+    @app.get("/api/admin/runs")
+    def admin_runs(request: Request) -> list[dict[str, Any]]:
+        with session_scope(factory) as s:
+            _admin(request, s)
+            return [
+                _run_summary(r)
+                for r in s.scalars(
+                    select(EvalRun).order_by(EvalRun.id.desc()).limit(50)
+                )
+            ]
+
+    @app.get("/api/admin/runs/{run_id}")
+    def admin_run(run_id: int, request: Request) -> dict[str, Any]:
+        with session_scope(factory) as s:
+            _admin(request, s)
+            r = s.get(EvalRun, run_id)
+            if r is None:
+                raise HTTPException(status_code=404, detail="Run not found")
+            rep = (r.report or {}).get("report", {})
+            rules: dict[str, int] = {}
+            sev: dict[str, int] = {}
+            for v in r.violations:
+                rules[v.rule] = rules.get(v.rule, 0) + 1
+                sev[v.severity] = sev.get(v.severity, 0) + 1
+            return {
+                **_run_summary(r),
+                "metrics": {m.key: m.value for m in r.metrics},
+                "groups": {k: rep.get(k) for k in ("consistency", "predictability", "robustness", "safety")},
+                "summary": (r.report or {}).get("summary", {}),
+                "violations_by_rule": rules,
+                "violations_by_severity": sev,
+                "violations": [{"task": v.task_id, "rule": v.rule, "severity": v.severity, "detail": v.detail}
+                               for v in r.violations[:300]],
+            }  # fmt: skip
+
+    @app.post("/api/admin/runs", status_code=202)
+    def admin_start_run(body: StartRunIn, request: Request) -> dict[str, Any]:
+        _require_admin(request)
+        try:
+            run_id = lab.start(body.n_runs)
+        except RuntimeError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        return {"run_id": run_id}
+
+    @app.get("/api/admin/lab/progress")
+    def admin_progress(request: Request) -> dict[str, Any]:
+        _require_admin(request)
+        return {"active": lab.progress()}
+
+    @app.get("/api/admin/conversations")
+    def admin_conversations(request: Request) -> list[dict[str, Any]]:
+        with session_scope(factory) as s:
+            _admin(request, s)
+            out = []
+            for c in s.scalars(
+                select(Conversation).order_by(Conversation.id.desc()).limit(100)
+            ):
+                calls = [t for m in c.messages for t in m.tool_calls]
+                who = s.get(Customer, c.customer_id) if c.customer_id else None
+                first = next((m.content for m in c.messages if m.role == "user"), "")
+                out.append({"id": c.public_id, "started_at": c.started_at.isoformat(),
+                            "customer": who.email if who else None, "messages": len(c.messages),
+                            "tool_calls": len(calls), "blocked": sum(not t.ok for t in calls),
+                            "preview": first[:120]})  # fmt: skip
+            return out
+
+    @app.get("/api/admin/conversations/{public_id}")
+    def admin_conversation(public_id: str, request: Request) -> dict[str, Any]:
+        with session_scope(factory) as s:
+            _admin(request, s)
+            c = s.scalar(
+                select(Conversation).where(Conversation.public_id == public_id)
+            )
+            if c is None:
+                raise HTTPException(status_code=404, detail="Conversation not found")
+            return {"id": c.public_id, "messages": [
+                {"role": m.role, "content": m.content, "at": m.created_at.isoformat(),
+                 "tools": [{"name": t.name, "arguments": t.arguments, "result": t.result, "ok": t.ok}
+                           for t in m.tool_calls]}
+                for m in c.messages]}  # fmt: skip
+
     app.state.support = support
+    app.state.lab = lab
     return app

@@ -62,3 +62,50 @@ def serve(host: str = "127.0.0.1", port: int = 8000) -> None:
     from kavrelle.api import create_app
 
     uvicorn.run(create_app(), host=host, port=port)
+
+
+@app.command("make-admin")
+def make_admin(email: str) -> None:
+    """Give an existing account access to the admin console (/admin)."""
+    from sqlalchemy import select
+
+    from kavrelle.models import Customer
+
+    settings = Settings.load()
+    engine = make_engine(settings.database_url)
+    with session_scope(make_session_factory(engine)) as session:
+        c = session.scalar(
+            select(Customer).where(Customer.email == email.strip().lower())
+        )
+        if c is None or not c.password_hash:
+            typer.echo(
+                "No account with that email. Create it on the website first.", err=True
+            )
+            raise typer.Exit(1)
+        c.is_admin = True
+    engine.dispose()
+    typer.echo(f"{email} can now open /admin.")
+
+
+@app.command("import-run")
+def import_run(
+    folder: str, name: str = "", label: str = "Support Assistant v1"
+) -> None:
+    """Load a finished `agentrel run` output folder into the Reliability Lab."""
+    from pathlib import Path
+
+    from kavrelle.lab import import_results_dir
+
+    path = Path(folder)
+    settings = Settings.load()
+    engine = make_engine(settings.database_url)
+    with session_scope(make_session_factory(engine)) as session:
+        try:
+            run = import_results_dir(session, path, name or path.name, label)
+        except (OSError, ValueError) as e:
+            typer.echo(f"Could not import: {e}", err=True)
+            raise typer.Exit(1) from e
+        typer.echo(
+            f"Imported {run.name}: {len(run.metrics)} metrics, {len(run.violations)} violations."
+        )
+    engine.dispose()

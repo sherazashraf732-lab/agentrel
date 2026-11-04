@@ -83,5 +83,12 @@
       request("POST", "/api/support/messages", { message, conversation_id: conversationId || null }, { timeout: 15000 }),
     chatJob: (id) => request("GET", `/api/support/jobs/${enc(id)}`, null, { retries: 1, timeout: 10000 }),
     chatHistory: (id) => request("GET", `/api/support/conversations/${enc(id)}`),
+    adminOverview: () => request("GET", "/api/admin/overview", null, { retries: 0 }),
+    adminRuns: () => request("GET", "/api/admin/runs"),
+    adminRun: (id) => request("GET", `/api/admin/runs/${enc(id)}`),
+    adminStart: (n) => request("POST", "/api/admin/runs", { n_runs: n }),
+    adminProgress: () => request("GET", "/api/admin/lab/progress", null, { retries: 0 }),
+    adminChats: () => request("GET", "/api/admin/conversations"),
+    adminChat: (id) => request("GET", `/api/admin/conversations/${enc(id)}`),
   };
 })();

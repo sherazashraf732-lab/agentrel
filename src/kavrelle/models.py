@@ -116,6 +116,7 @@ class Customer(Base):
     email: Mapped[str] = mapped_column(String(160), unique=True)
     zip_code: Mapped[str] = mapped_column(String(12))
     password_hash: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    is_admin: Mapped[bool] = mapped_column(default=False, server_default="0")
 
     orders: Mapped[list[Order]] = relationship(back_populates="customer")
 

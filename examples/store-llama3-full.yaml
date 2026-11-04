@@ -1,0 +1,9 @@
+# Full paper protocol on the TechMart store: 8 scenarios x 3 runs under each condition
+# (baseline, tool faults, environment changes, reworded prompts). About 1-2 hours on a CPU laptop.
+name: llama3.2-3b-store-full
+model: ollama/llama3.2:3b
+environment: store
+n_runs: 3
+fault_probability: 0.2
+seed: 7
+output_dir: agentrel-results/llama3.2-3b-store-full
