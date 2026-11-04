@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import re
 import secrets
-import string
 import uuid
 from dataclasses import dataclass
 
@@ -31,6 +30,7 @@ from kavrelle.models import (
 )
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I/L: easy to read aloud
 ZIP_RE = re.compile(r"^[A-Za-z0-9 -]{3,12}$")
 
 
@@ -163,7 +163,7 @@ def _clean_buyer(buyer: Buyer) -> Buyer:
 
 
 def _new_order_code(session: Session) -> str:
-    alphabet = string.ascii_uppercase + string.digits
+    alphabet = CODE_ALPHABET
     while True:
         code = "K" + "".join(secrets.choice(alphabet) for _ in range(7))
         if session.scalar(select(Order.id).where(Order.code == code)) is None:

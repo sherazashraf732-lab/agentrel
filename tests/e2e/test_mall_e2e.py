@@ -270,3 +270,19 @@ def test_screens_are_saved_for_review(
     out.mkdir(parents=True, exist_ok=True)
     page.screenshot(path=str(out / "grid.png"))
     assert (out / "grid.png").stat().st_size > 10_000
+
+
+def test_switching_grid_to_3d_builds_the_mall_on_demand(
+    page: Page, server: tuple[str, str]
+) -> None:
+    base, _ = server
+    _open(page, base, "?mode=2d")
+    assert page.evaluate("KV.app.state().mall") is False
+    page.click('#viewSeg button[data-mode="3d"]')
+    page.wait_for_function(
+        "KV.app.state().mode === '3d' || KV.app.state().mall === false && document.querySelector('.toast')",
+        timeout=60000,
+    )
+    state = page.evaluate("KV.app.state()")
+    assert state["mode"] == ("3d" if state["mall"] else "2d")
+    expect(page.locator("#loader")).to_have_class("done")

@@ -265,3 +265,14 @@ def test_refund_amount_must_be_in_range(db: Session, amount: int) -> None:
 def test_only_delivered_orders_can_be_refunded(db: Session, code: str) -> None:
     with pytest.raises(shop.Conflict, match="Only delivered"):
         shop.refund_order(db, code, *ALI, 100)
+
+
+def test_order_codes_avoid_confusable_characters(db: Session) -> None:
+    codes = set()
+    for _ in range(20):
+        token = shop.create_cart(db).token
+        shop.add_item(db, token, "mouse-pad", "M", 1)
+        codes.add(shop.checkout(db, token, BUYER).code)
+    assert len(codes) == 20
+    assert all(set(c[1:]) <= set(shop.CODE_ALPHABET) for c in codes)
+    assert not set("".join(c[1:] for c in codes)) & set("0O1IL")

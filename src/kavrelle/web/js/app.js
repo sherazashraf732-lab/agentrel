@@ -127,10 +127,28 @@
     $("hint").hidden = mode === "2d";
     $("floorSeg").hidden = mode === "2d";
     document.querySelectorAll("#viewSeg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
-    if (state.mall) state.mall.pause(mode === "2d");
+    if (state.mall) { state.mall.pause(mode === "2d"); if (mode === "3d") window.dispatchEvent(new Event("resize")); }
     if (mode === "2d") $("shopCard").hidden = true;
     else if (state.shop) showShopCard(state.shop);
-    store.set("kv_mode", mode);
+  }
+  let mallStarting = null;
+  function startMall(params) {
+    // Builds the 3D mall once, on first need; resolves to true when it is ready.
+    if (state.mall) return Promise.resolve(true);
+    if (mallStarting) return mallStarting;
+    if (!(Mall3D.webglAvailable() && window.THREE)) return Promise.resolve(false);
+    $("loader").classList.remove("done");
+    loadProgress(0.15, "Lighting up the shops…");
+    mallStarting = Mall3D.create({
+      canvas: $("scene"), catalog: state.catalog,
+      lowGraphics: (params && params.get("low") === "1") || (navigator.hardwareConcurrency || 8) <= 2,
+      onProgress: (f) => loadProgress(0.15 + f * 0.85, "Hanging the photos…"),
+      onPickProduct: openProduct, onEnterShop: openShop, onHover,
+      onContextLost: () => { state.mall = null; mallStarting = null; setMode("2d", true); toast("3D view stopped, switched to the grid.", { bad: true }); },
+    }).then((m) => { state.mall = m; return true; })
+      .catch((e) => { console.error(e); mallStarting = null; return false; })
+      .finally(() => { loadProgress(1, "Welcome to Kavrelle"); $("loader").classList.add("done"); });
+    return mallStarting;
   }
   function setFloor(floor) {
     state.floor = floor;
@@ -201,7 +219,7 @@
     $("pName").textContent = p.name;
     $("pPrice").textContent = money(p.price_cents, p.currency);
     $("pDesc").textContent = p.description || "";
-    $("pColor").textContent = p.color ? `Colour: ${p.color}` : "";
+    $("pColor").textContent = p.color ? `Color: ${p.color}` : "";
     $("pVarLabel").textContent = p.variant_label;
     const chips = $("pChips");
     chips.replaceChildren(...p.variants.map((v) => h("button", {
@@ -452,7 +470,16 @@
     setFloor(Number(b.dataset.floor)); state.shop = null; markDirectory(); $("shopCard").hidden = true;
     if (state.mall) state.mall.goConcourse(state.floor);
   }));
-  document.querySelectorAll("#viewSeg button").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
+  document.querySelectorAll("#viewSeg button").forEach((b) => b.addEventListener("click", async () => {
+    const mode = b.dataset.mode;
+    store.set("kv_mode", mode); // only an explicit choice is remembered
+    if (mode === "3d" && !state.mall) {
+      const ok = await startMall(new URLSearchParams(location.search));
+      if (!ok) { toast("3D isn’t available on this device, showing the grid instead.", { bad: true }); setMode("2d", true); return; }
+      if (state.shop) state.mall.goShop(state.shop); else state.mall.goConcourse(state.floor);
+    }
+    setMode(mode, true);
+  }));
   $("leaveShop").addEventListener("click", leaveShop);
   $("homeLink").addEventListener("click", (e) => { e.preventDefault(); if (state.mode === "3d") leaveShop(); else window.scrollTo({ top: 0, behavior: "smooth" }); });
   document.addEventListener("keydown", (e) => {
@@ -498,22 +525,8 @@
     const params = new URLSearchParams(location.search);
     const wanted = params.get("mode") || store.get("kv_mode") || "3d";
     const small = window.matchMedia("(max-width: 700px)").matches;
-    const canGL = Mall3D.webglAvailable() && window.THREE;
-    if (wanted !== "2d" && canGL && !small) {
-      loadProgress(0.15, "Lighting up the shops…");
-      try {
-        state.mall = await Mall3D.create({
-          canvas: $("scene"), catalog,
-          lowGraphics: params.get("low") === "1" || (navigator.hardwareConcurrency || 8) <= 2,
-          onProgress: (f) => loadProgress(0.15 + f * 0.85, "Hanging the photos…"),
-          onPickProduct: openProduct, onEnterShop: openShop, onHover,
-          onContextLost: () => { state.mall = null; setMode("2d", true); toast("3D view stopped, switched to the grid.", { bad: true }); },
-        });
-      } catch (e) {
-        state.mall = null;
-        console.error(e);
-      }
-    }
+    const explicit = params.get("mode");
+    if (wanted !== "2d" && (!small || explicit === "3d")) await startMall(params);
     setMode(state.mall ? (wanted === "2d" ? "2d" : "3d") : "2d", true);
     loadProgress(1, "Welcome to Kavrelle");
     $("loader").classList.add("done");
