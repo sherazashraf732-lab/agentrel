@@ -94,10 +94,7 @@ def test_every_info_page_is_served_safely(client: TestClient, path: str) -> None
 
 def test_legal_pages_say_what_matters(client: TestClient) -> None:
     terms, privacy = client.get("/terms").text, client.get("/privacy").text
-    assert (
-        "Effective November 5, 2026" in terms
-        and "Effective November 5, 2026" in privacy
-    )
+    assert "<dd>5 November 2026</dd>" in terms and "<dd>5 November 2026</dd>" in privacy
     assert "no payment is collected" in terms and "pending" in terms.lower()
     assert "kv_session" in privacy and "no analytics" in privacy.lower()
     assert "do not sell" in privacy and "30 days" in privacy
@@ -489,8 +486,14 @@ def test_every_page_has_seo_tags_and_the_credit(client: TestClient, path: str) -
     else:
         canonical = "http://testserver" + (path if path != "/" else "/")
         assert f'<link rel="canonical" href="{canonical}">' in html
-    if path != "/":
-        assert "Created by Sheraz Ashraf" in html and "All rights reserved" not in html
+    visible = re.sub(r"<head>.*?</head>", "", html, flags=re.DOTALL)
+    assert "All rights reserved" not in html
+    if path == "/about":
+        assert '<section class="maker"' in visible and "Sheraz Ashraf" in visible
+    else:
+        assert "Sheraz Ashraf" not in visible, (
+            "the creator is named on the About page only"
+        )
 
 
 def test_home_page_structured_data_and_heading(client: TestClient) -> None:
@@ -507,9 +510,9 @@ def test_home_page_structured_data_and_heading(client: TestClient) -> None:
         kinds == {"WebSite", "OnlineStore"}
         and data["@graph"][0]["author"]["name"] == "Sheraz Ashraf"
     )
-    assert '<h1 class="sr-only">' in html and "Created by Sheraz Ashraf" in html
+    assert '<h1 class="sr-only">' in html
     assert client.get("/static/img/og.jpg").headers["content-type"] == "image/jpeg"
-    assert "Created by Sheraz Ashraf" in client.get("/admin").text
+    assert "Sheraz Ashraf" not in client.get("/admin").text
 
 
 def test_public_url_setting_is_used_for_links(

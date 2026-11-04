@@ -21,7 +21,7 @@
 <script type="application/ld+json">{"@context": "https://schema.org", "@graph": [{"@type": "WebSite", "name": "Kavrelle", "url": "__BASE__/", "description": "A 3D online shopping mall with twelve shops across two floors.", "author": {"@type": "Person", "name": "Sheraz Ashraf"}, "potentialAction": {"@type": "SearchAction", "target": "__BASE__/?q={search_term_string}", "query-input": "required name=search_term_string"}}, {"@type": "OnlineStore", "name": "Kavrelle", "url": "__BASE__/", "logo": "__BASE__/static/img/og.jpg", "founder": {"@type": "Person", "name": "Sheraz Ashraf"}, "contactPoint": {"@type": "ContactPoint", "contactType": "customer support", "url": "__BASE__/contact"}}]}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@800;900&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="/static/styles.css">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23e2552d'/%3E%3Ctext x='16' y='23' font-family='Arial' font-weight='900' font-size='20' text-anchor='middle' fill='white'%3EK%3C/text%3E%3C/svg%3E">
 </head>
@@ -31,7 +31,7 @@
 
 <div id="loader" role="status" aria-live="polite">
   <div class="loader-inner">
-    <div class="wordmark">KAVREL<span>LE</span></div>
+    <div class="wordmark">Kavrel<span>le</span></div>
     <p class="loader-tag">Everything, under one roof.</p>
     <div class="progress" aria-hidden="true"><i id="loadBar"></i></div>
     <div class="loader-status" id="loadStatus">Opening the doors…</div>
@@ -51,8 +51,7 @@
 
 <header class="topbar">
   <a class="brand" href="#" id="homeLink" aria-label="Kavrelle home">
-    <span class="brand-mark" aria-hidden="true">K</span>
-    <span class="wordmark">KAVREL<span>LE</span></span>
+    <span class="wordmark">Kavrel<span>le</span></span>
   </a>
   <div class="search" role="search">
     <label class="sr-only" for="q">Search products and shops</label>
@@ -69,22 +68,31 @@
       <button type="button" data-mode="3d" aria-pressed="true">3D</button>
       <button type="button" data-mode="2d" aria-pressed="false">Grid</button>
     </div>
-    <button class="btn" type="button" id="acctBtn"><span aria-hidden="true">👤</span><span class="label" id="acctLabel">Sign in</span></button>
-    <button class="btn" type="button" id="trackBtn"><span aria-hidden="true">📦</span><span class="label">Track order</span></button>
+    <button class="btn" type="button" id="acctBtn"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span class="label" id="acctLabel">Sign in</span></button>
+    <button class="btn" type="button" id="trackBtn"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h12v9H3zM15 10h4l2 3v3h-6"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg><span class="label">Track order</span></button>
     <button class="btn primary" type="button" id="cartBtn" aria-haspopup="dialog">
-      <span>Cart</span><span class="badge" id="cartCount" aria-label="items in cart">0</span>
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-1 13H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg><span>Bag</span><span class="badge" id="cartCount" aria-label="items in cart">0</span>
     </button>
   </div>
 </header>
 
 <nav class="directory" id="directory" aria-label="Mall directory">
-  <header><h2>Directory</h2><p>Click a shop to walk straight in.</p></header>
-  <div class="floors" id="dirFloors"></div>
+  <header>
+    <h2>Directory</h2><span class="d-count" id="dirCount"></span>
+    <button type="button" class="d-fold" id="dirFold" aria-expanded="true" aria-controls="dirBody" title="Fold the directory"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg><span class="sr-only">Fold the directory</span></button>
+  </header>
+  <div class="d-body" id="dirBody">
+    <div class="d-tabs" role="group" aria-label="Directory floor" id="dirTabs">
+      <button type="button" data-dfloor="1" aria-pressed="true">Floor 1</button>
+      <button type="button" data-dfloor="2" aria-pressed="false">Floor 2</button>
+    </div>
+    <div class="floors" id="dirFloors"></div>
   <footer class="dir-foot" aria-label="Site links">
     <a href="/help">Help</a><a href="/contact">Contact</a><a href="/about">About</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a>
-    <p class="credit">Created by Sheraz Ashraf</p>
   </footer>
+  </div>
 </nav>
+<div class="where" id="whereChip" aria-live="polite" hidden></div>
 
 <div class="shop-card" id="shopCard" hidden>
   <div>
@@ -137,7 +145,7 @@
   <button class="close" type="button" data-close aria-label="Close cart">×</button>
   <div class="drawer-head"><h2>Your cart</h2></div>
   <div class="sheet-scroll"><ul class="cart-lines" id="cartLines"></ul>
-    <div class="cart-empty" id="cartEmpty" hidden><div class="big-emoji" aria-hidden="true">🛍️</div><div>Your cart is empty. Every shop is one click away.</div></div>
+    <div class="cart-empty" id="cartEmpty" hidden><div class="empty-title">Your bag is empty</div><div>Every shop is one click away.</div></div>
     <p class="form-error inset" id="cartError" role="alert" hidden></p>
   </div>
   <div class="sheet-foot">
@@ -233,7 +241,7 @@
   </div>
 </dialog>
 
-<button class="chat-fab" type="button" id="chatBtn" aria-haspopup="dialog" aria-controls="chatPanel"><span aria-hidden="true">💬</span> Ask Kavrelle</button>
+<button class="chat-fab" type="button" id="chatBtn" aria-haspopup="dialog" aria-controls="chatPanel"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg><span class="label">Ask Kavrelle</span></button>
 <section class="chat" id="chatPanel" aria-label="Kavrelle Support" hidden>
   <header class="chat-head">
     <div class="chat-avatar" aria-hidden="true">K</div>
