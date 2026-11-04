@@ -115,6 +115,7 @@ class Customer(Base):
     name: Mapped[str] = mapped_column(String(80))
     email: Mapped[str] = mapped_column(String(160), unique=True)
     zip_code: Mapped[str] = mapped_column(String(12))
+    password_hash: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     orders: Mapped[list[Order]] = relationship(back_populates="customer")
 
@@ -172,6 +173,9 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    public_id: Mapped[str | None] = mapped_column(
+        String(36), unique=True, nullable=True
+    )
     customer_id: Mapped[int | None] = mapped_column(
         ForeignKey("customers.id", ondelete="SET NULL"), nullable=True
     )
@@ -312,3 +316,19 @@ class CartItem(Base):
 
     cart: Mapped[Cart] = relationship(back_populates="items")
     variant: Mapped[Variant] = relationship()
+
+
+class AuthSession(Base):
+    """A signed-in browser. Only a SHA-256 of the cookie token is stored."""
+
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    customer_id: Mapped[int] = mapped_column(
+        ForeignKey("customers.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    customer: Mapped[Customer] = relationship()

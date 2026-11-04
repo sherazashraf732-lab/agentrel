@@ -32,6 +32,7 @@ class Settings:
     database_url: str = DEFAULT_DATABASE_URL
     brand: str = "Kavrelle"
     assistant_name: str = "Kavrelle Support"
+    secure_cookies: bool = False  # set KAVRELLE_SECURE_COOKIES=1 when served over HTTPS
 
     @classmethod
     def load(cls, env_file: Path | None = Path(".env")) -> Settings:
@@ -42,4 +43,9 @@ class Settings:
             or file_values.get("KAVRELLE_DATABASE_URL")
             or DEFAULT_DATABASE_URL
         )
-        return cls(database_url=url)
+        secure = (
+            os.environ.get("KAVRELLE_SECURE_COOKIES")
+            or file_values.get("KAVRELLE_SECURE_COOKIES")
+            or "0"
+        ) == "1"
+        return cls(database_url=url, secure_cookies=secure)
