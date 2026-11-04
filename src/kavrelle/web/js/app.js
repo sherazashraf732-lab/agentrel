@@ -148,7 +148,8 @@
       canvas: $("scene"), catalog: state.catalog,
       lowGraphics: (params && params.get("low") === "1") || (navigator.hardwareConcurrency || 8) <= 2,
       onProgress: (f) => loadProgress(0.15 + f * 0.85, "Hanging the photos…"),
-      onPickProduct: openProduct, onEnterShop: openShop, onHover,
+      onPickProduct: openProduct, onEnterShop: openShop, onHover, onLeaveShop: () => leaveShop(),
+      onFloor: (f) => { setFloor(f); toast(`Floor ${f}`); },
       onContextLost: () => { state.mall = null; mallStarting = null; setMode("2d", true); toast("3D view stopped, switched to the grid.", { bad: true }); },
     }).then((m) => { state.mall = m; return true; })
       .catch((e) => { console.error(e); mallStarting = null; return false; })
@@ -510,6 +511,8 @@
     if (!hit) { tip.hidden = true; return; }
     tip.replaceChildren();
     if (hit.kind === "product") tip.append(h("b", { text: hit.info.name }), h("span", { text: money(hit.info.price_cents, hit.info.currency) }));
+    else if (hit.kind === "exit") tip.append(h("b", { text: "Back to the concourse" }));
+    else if (hit.kind === "floor") tip.append(h("b", { text: `Ride the escalator to floor ${hit.to}` }));
     else tip.append(h("b", { text: `Enter ${state.shops.get(hit.slug).name}` }));
     tip.style.left = `${x}px`; tip.style.top = `${y}px`; tip.hidden = false;
   }
@@ -694,6 +697,7 @@
   });
 
   // test hooks (no secrets here: only navigation helpers)
-  window.KV.app = { openShop, openProduct, openCart, leaveShop, openChat, state: () => ({ mode: state.mode, shop: state.shop, floor: state.floor, mall: !!state.mall, signedIn: !!state.me }) };
+  window.KV.app = { openShop, openProduct, openCart, leaveShop, openChat, state: () => ({ mode: state.mode, shop: state.shop, floor: state.floor, mall: !!state.mall, signedIn: !!state.me }),
+    sign: (kind) => (state.mall ? state.mall.signOnScreen(kind) : null), cam: () => (state.mall ? state.mall.state() : null) };
   boot();
 })();

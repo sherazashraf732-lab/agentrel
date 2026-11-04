@@ -11,8 +11,8 @@ import re
 import socket
 import threading
 import time
-from collections.abc import Iterator
 from email import message_from_bytes, policy
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -27,9 +27,9 @@ from sqlalchemy import select, update
 from agentrel.llm.ollama import ChatReply, ToolCall
 from kavrelle import migrate
 from kavrelle.api import create_app
+from kavrelle.mailer import Mailer
 from kavrelle.config import Settings
 from kavrelle.db import make_engine, make_session_factory, session_scope
-from kavrelle.mailer import Mailer
 from kavrelle.models import Customer, Product, Variant
 from kavrelle.seed import seed
 
@@ -563,3 +563,40 @@ def test_info_pages_fit_a_phone(browser, server: tuple[str, str]) -> None:  # ty
         )
         assert overflow <= 0, f"{path} scrolls sideways by {overflow}px"
     ctx.close()
+
+
+def test_3d_mouse_only_navigation(page: Page, server: tuple[str, str]) -> None:
+    """Turn all the way round, walk out of a shop and ride the escalator using only the mouse."""
+    base, _ = server
+    _open(page, base, "?mode=3d")
+    if not page.evaluate("KV.app.state().mall"):
+        pytest.skip("no WebGL on this machine")
+    page.click('#dirFloors button[data-shop="maison-elle"]')
+    page.wait_for_function("() => KV.app.cam().mode === 'shop'", timeout=60000)
+    box = page.locator("#scene").bounding_box()
+    assert box
+    cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    page.mouse.move(cx, cy)
+    page.mouse.down()
+    for i in range(1, 31):  # drag ~630px = a half turn (yaw is not clamped any more)
+        page.mouse.move(cx - i * 21, cy)
+    page.mouse.up()
+    page.wait_for_function("() => KV.app.sign('exit') !== null", timeout=10000)
+    page.wait_for_timeout(3000)  # let the camera settle
+    pt = page.evaluate("KV.app.sign('exit')")
+    page.mouse.move(pt["x"], pt["y"])
+    expect(page.locator("#tip")).to_contain_text("Back to the concourse")
+    page.mouse.click(pt["x"], pt["y"])
+    expect(page.locator("#shopCard")).to_be_hidden()
+    page.wait_for_function("() => KV.app.cam().mode === 'concourse'", timeout=60000)
+    page.wait_for_function("() => KV.app.sign('floor') !== null", timeout=10000)
+    page.wait_for_timeout(3000)
+    pt = page.evaluate("KV.app.sign('floor')")
+    page.mouse.click(pt["x"], pt["y"])
+    page.wait_for_function(
+        "() => KV.app.cam().floor === 2 && KV.app.cam().mode === 'concourse'",
+        timeout=90000,
+    )
+    expect(page.locator('#floorSeg button[data-floor="2"]')).to_have_attribute(
+        "aria-pressed", "true"
+    )
