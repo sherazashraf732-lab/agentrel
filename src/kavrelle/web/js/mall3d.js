@@ -588,7 +588,7 @@
       },
       walk,
       look(dyaw) { cam.yaw += dyaw; updateTarget(); },
-      state() { return { mode: cam.mode, floor: cam.floor, shop: cam.shop }; },
+      state() { return { mode: cam.mode, floor: cam.floor, shop: cam.shop, z: cam.z, yaw: cam.yaw }; },
       // where a way-finding sign is on screen (used by browser tests and the demo recording)
       signOnScreen(kind) {
         const pool = cam.mode === "shop" ? shops.get(cam.shop).group.children : navMeshes;
