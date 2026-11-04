@@ -372,3 +372,24 @@ body.mode-3d-hint .controls-hint { right: 200px; }
 .dir-foot .credit { flex-basis: 100%; margin: 4px 0 0; color: var(--muted); font-size: 11px; }
 .site-foot .credit { font-weight: 600; color: var(--ink-2); }
 .noscript { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 24px; background: var(--cream); text-align: center; font-size: 16px; }
+
+/* ---------- on-screen walk pad (3D) ---------- */
+.walkpad {
+  position: fixed; z-index: 12; right: max(24px, env(safe-area-inset-right, 0px)); bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+  display: grid; grid-template-columns: repeat(3, 48px); grid-template-rows: repeat(2, 48px); gap: 6px;
+  grid-template-areas: ". fwd ." "left back right";
+}
+.walkpad button {
+  display: grid; place-items: center; align-content: center; gap: 1px; border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 12px;
+  background: rgba(31, 26, 22, 0.78); color: #fff; font-size: 14px; line-height: 1; cursor: pointer; touch-action: none; user-select: none;
+  box-shadow: var(--shadow-sm); transition: transform 0.08s, background 0.12s;
+}
+.walkpad button kbd { font: 700 10px var(--body); opacity: 0.75; }
+.walkpad button:hover { background: rgba(31, 26, 22, 0.9); }
+.walkpad button.active { background: var(--accent); transform: scale(0.94); }
+.walkpad [data-walk="fwd"] { grid-area: fwd; }
+.walkpad [data-walk="left"] { grid-area: left; }
+.walkpad [data-walk="back"] { grid-area: back; }
+.walkpad [data-walk="right"] { grid-area: right; }
+@media (max-width: 640px) { .walkpad { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); right: 12px; } }
+.controls-hint span { white-space: nowrap; }

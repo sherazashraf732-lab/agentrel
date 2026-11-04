@@ -490,7 +490,7 @@ def test_every_page_has_seo_tags_and_the_credit(client: TestClient, path: str) -
         canonical = "http://testserver" + (path if path != "/" else "/")
         assert f'<link rel="canonical" href="{canonical}">' in html
     if path != "/":
-        assert "Created by Sheraz Ashraf. All rights reserved." in html
+        assert "Created by Sheraz Ashraf" in html and "All rights reserved" not in html
 
 
 def test_home_page_structured_data_and_heading(client: TestClient) -> None:
@@ -507,10 +507,7 @@ def test_home_page_structured_data_and_heading(client: TestClient) -> None:
         kinds == {"WebSite", "OnlineStore"}
         and data["@graph"][0]["author"]["name"] == "Sheraz Ashraf"
     )
-    assert (
-        '<h1 class="sr-only">' in html
-        and "Created by Sheraz Ashraf. All rights reserved." in html
-    )
+    assert '<h1 class="sr-only">' in html and "Created by Sheraz Ashraf" in html
     assert client.get("/static/img/og.jpg").headers["content-type"] == "image/jpeg"
     assert "Created by Sheraz Ashraf" in client.get("/admin").text
 

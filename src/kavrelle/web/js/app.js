@@ -120,7 +120,7 @@
       h("nav", { "aria-label": "Site links" }, ...[["Help & FAQ", "/help"], ["Contact", "/contact"], ["About", "/about"],
         ["Terms", "/terms"], ["Privacy", "/privacy"]].map(([t, href]) => h("a", { href, text: t }))),
       h("p", { text: "A demonstration store. No payment is taken and nothing is shipped." }),
-      h("p", { class: "credit", text: "© 2026 Kavrelle. Created by Sheraz Ashraf. All rights reserved." })));
+      h("p", { class: "credit", text: "Created by Sheraz Ashraf" })));
   }
 
   // ---------- navigation ----------
@@ -131,6 +131,7 @@
     $("grid2d").hidden = mode !== "2d";
     $("directory").hidden = mode === "2d";
     $("hint").hidden = mode === "2d";
+    $("walkPad").hidden = mode === "2d";
     $("floorSeg").hidden = mode === "2d";
     document.querySelectorAll("#viewSeg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
     if (state.mall) { state.mall.pause(mode === "2d"); if (mode === "3d") window.dispatchEvent(new Event("resize")); }
@@ -489,6 +490,31 @@
   }));
   $("leaveShop").addEventListener("click", leaveShop);
   $("homeLink").addEventListener("click", (e) => { e.preventDefault(); if (state.mode === "3d") leaveShop(); else window.scrollTo({ top: 0, behavior: "smooth" }); });
+  // ---------- walking: keyboard, scroll and the on-screen pad do the same thing ----------
+  const KEY_ACTS = { w: "fwd", arrowup: "fwd", s: "back", arrowdown: "back", a: "left", arrowleft: "left", d: "right", arrowright: "right" };
+  function doWalk(act) {
+    if (!state.mall) return;
+    const inShop = state.mall.state().mode === "shop";
+    if (act === "fwd") state.mall.walk(2);
+    else if (act === "back") { if (inShop) leaveShop(); else state.mall.walk(-2); }
+    else state.mall.look(act === "left" ? 0.12 : -0.12);
+  }
+  function padFlash(act, on) {
+    const b = document.querySelector(`#walkPad [data-walk="${act}"]`);
+    if (b) b.classList.toggle("active", on);
+  }
+  document.querySelectorAll("#walkPad [data-walk]").forEach((b) => {
+    let timer = 0;
+    const stop = () => { clearInterval(timer); timer = 0; b.classList.remove("active"); };
+    b.addEventListener("pointerdown", (e) => {
+      e.preventDefault(); b.setPointerCapture(e.pointerId);
+      doWalk(b.dataset.walk); b.classList.add("active");
+      clearInterval(timer); timer = setInterval(() => doWalk(b.dataset.walk), 140); // hold to keep walking
+    });
+    ["pointerup", "pointercancel", "lostpointercapture"].forEach((ev) => b.addEventListener(ev, stop));
+    b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); doWalk(b.dataset.walk); } });
+  });
+
   document.addEventListener("keydown", (e) => {
     if (e.target.closest("input, dialog")) return;
     if (e.key === "Escape") {
@@ -498,12 +524,13 @@
       return;
     }
     if (state.mode !== "3d" || !state.mall) return;
-    const k = e.key.toLowerCase();
-    if (k === "w" || k === "arrowup") { state.mall.walk(2); e.preventDefault(); }
-    else if (k === "s" || k === "arrowdown") { state.mall.walk(-2); e.preventDefault(); }
-    else if (k === "a" || k === "arrowleft") { state.mall.look(0.12); e.preventDefault(); }
-    else if (k === "d" || k === "arrowright") { state.mall.look(-0.12); e.preventDefault(); }
+    const act = KEY_ACTS[e.key.toLowerCase()];
+    if (!act) return;
+    e.preventDefault();
+    doWalk(act);
+    padFlash(act, true);
   });
+  document.addEventListener("keyup", (e) => { const act = KEY_ACTS[e.key.toLowerCase()]; if (act) padFlash(act, false); });
   document.addEventListener("visibilitychange", () => { if (state.mall && state.mode === "3d") state.mall.pause(document.hidden); });
 
   // ---------- 3D hooks ----------

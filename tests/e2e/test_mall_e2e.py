@@ -602,3 +602,38 @@ def test_3d_mouse_only_navigation(page: Page, server: tuple[str, str]) -> None:
     expect(page.locator('#floorSeg button[data-floor="2"]')).to_have_attribute(
         "aria-pressed", "true"
     )
+
+
+def test_walk_pad_is_on_screen_and_matches_the_keys(
+    page: Page, server: tuple[str, str]
+) -> None:
+    base, _ = server
+    _open(page, base, "?mode=3d")
+    if not page.evaluate("KV.app.state().mall"):
+        pytest.skip("no WebGL on this machine")
+    pad = page.locator("#walkPad")
+    expect(pad).to_be_visible()
+    expect(page.locator("#hint")).to_contain_text("W")
+    z0 = page.evaluate("KV.app.cam().z")
+    page.click('#walkPad [data-walk="fwd"]')
+    assert page.evaluate("KV.app.cam().z") < z0, "the on-screen ▲ walks forward"
+    z1 = page.evaluate("KV.app.cam().z")
+    page.locator("#scene").focus()
+    page.keyboard.down("s")
+    expect(page.locator('#walkPad [data-walk="back"]')).to_have_class(
+        re.compile("active")
+    )
+    page.keyboard.up("s")
+    expect(page.locator('#walkPad [data-walk="back"]')).not_to_have_class(
+        re.compile("active")
+    )
+    assert page.evaluate("KV.app.cam().z") > z1, "S walks back and lights up the pad"
+    yaw = page.evaluate("KV.app.cam().yaw")
+    page.click('#walkPad [data-walk="left"]')
+    assert page.evaluate("KV.app.cam().yaw") > yaw
+    page.click('#dirFloors button[data-shop="maison-elle"]')
+    page.wait_for_function("() => KV.app.cam().mode === 'shop'", timeout=60000)
+    page.click('#walkPad [data-walk="back"]')
+    expect(page.locator("#shopCard")).to_be_hidden()
+    page.click('#viewSeg button[data-mode="2d"]')
+    expect(pad).to_be_hidden()

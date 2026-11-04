@@ -82,7 +82,7 @@
   <div class="floors" id="dirFloors"></div>
   <footer class="dir-foot" aria-label="Site links">
     <a href="/help">Help</a><a href="/contact">Contact</a><a href="/about">About</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a>
-    <p class="credit">© 2026 Created by Sheraz Ashraf. All rights reserved.</p>
+    <p class="credit">Created by Sheraz Ashraf</p>
   </footer>
 </nav>
 
@@ -96,7 +96,13 @@
 </div>
 
 <div class="controls-hint" id="hint">
-  <span><kbd>Drag</kbd> look 360°</span><span><kbd>Scroll</kbd> walk</span><span><kbd>Click</kbd> a shop, product, EXIT or escalator</span><span><kbd>Esc</kbd> back</span>
+  <span><kbd>Drag</kbd> look 360°</span><span><kbd>W</kbd><kbd>S</kbd> or <kbd>Scroll</kbd> walk</span><span><kbd>A</kbd><kbd>D</kbd> turn</span><span><kbd>Click</kbd> shop, product, EXIT, escalator</span><span><kbd>Esc</kbd> back</span>
+</div>
+<div class="walkpad" id="walkPad" role="group" aria-label="Walk controls">
+  <button type="button" data-walk="fwd" title="Walk forward (W or ↑)" aria-label="Walk forward"><span aria-hidden="true">▲</span><kbd>W</kbd></button>
+  <button type="button" data-walk="left" title="Turn left (A or ←)" aria-label="Turn left"><span aria-hidden="true">◀</span><kbd>A</kbd></button>
+  <button type="button" data-walk="back" title="Walk back (S or ↓)" aria-label="Walk back"><span aria-hidden="true">▼</span><kbd>S</kbd></button>
+  <button type="button" data-walk="right" title="Turn right (D or →)" aria-label="Turn right"><span aria-hidden="true">▶</span><kbd>D</kbd></button>
 </div>
 <div class="tooltip" id="tip" hidden></div>
 
