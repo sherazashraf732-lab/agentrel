@@ -7,6 +7,7 @@ Run with:  KAVRELLE_E2E=1 uv run pytest tests/e2e -q
 from __future__ import annotations
 
 import os
+import re
 import socket
 import threading
 import time
@@ -22,12 +23,44 @@ import uvicorn
 from playwright.sync_api import Page, expect, sync_playwright
 from sqlalchemy import select, update
 
+from agentrel.llm.ollama import ChatReply, ToolCall
 from kavrelle import migrate
 from kavrelle.api import create_app
 from kavrelle.config import Settings
 from kavrelle.db import make_engine, make_session_factory, session_scope
 from kavrelle.models import Product, Variant
 from kavrelle.seed import seed
+
+
+def rule_based_chat(messages: list[dict], tools: list[dict]) -> ChatReply:  # type: ignore[type-arg]
+    """A tiny stand-in for the model so browser tests are exact and offline."""
+    if messages[-1]["role"] == "tool":
+        result = messages[-1]["content"]
+        return ChatReply(content=f"Reply: {'All done.' if 'NOT ALLOWED' not in result else 'Sorry, I cannot do that.'}",
+                         tool_calls=[], tokens=1)  # fmt: skip
+    text = messages[-1]["content"]
+    calls = []
+    m = re.search(r"([\w.]+@[\w.]+)\D+(\d{5})", text)
+    if m:
+        calls.append(
+            ToolCall(
+                name="verify_customer",
+                arguments={"email": m.group(1), "zip_code": m.group(2)},
+            )
+        )
+    code = re.search(r"\b([AK][A-Z0-9]{3,8})\b", text)
+    if code and "cancel" in text.lower():
+        calls.append(
+            ToolCall(name="cancel_order", arguments={"order_id": code.group(1)})
+        )
+    if calls:
+        return ChatReply(content="", tool_calls=calls, tokens=1)
+    return ChatReply(
+        content="Reply: Happy to help! Share your email and zip code for order questions.",
+        tool_calls=[],
+        tokens=1,
+    )
+
 
 BROWSER_ARGS = [
     "--enable-unsafe-swiftshader",
@@ -64,7 +97,7 @@ def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple[str, str]
     port = _free_port()
     srv = uvicorn.Server(
         uvicorn.Config(
-            create_app(Settings(), engine=engine),
+            create_app(Settings(), engine=engine, chat_factory=lambda: rule_based_chat),
             host="127.0.0.1",
             port=port,
             log_level="warning",
@@ -286,3 +319,68 @@ def test_switching_grid_to_3d_builds_the_mall_on_demand(
     state = page.evaluate("KV.app.state()")
     assert state["mode"] == ("3d" if state["mall"] else "2d")
     expect(page.locator("#loader")).to_have_class("done")
+
+
+def test_create_account_then_see_my_orders(page: Page, server: tuple[str, str]) -> None:
+    base, _ = server
+    _open(page, base, "?mode=2d")
+    page.click("#acctBtn")
+    page.click("#tabUp")
+    page.fill("#suName", "Sara Ahmed")
+    page.fill("#suEmail", "sara@example.com")
+    page.fill("#suZip", "44000")
+    page.fill("#suPass", "short")
+    page.click("#suSubmit")
+    expect(page.locator("#suPassErr")).to_contain_text("8+ characters")
+    page.fill("#suPass", "monitor2026")
+    page.click("#suSubmit")
+    expect(page.locator("#acctLabel")).to_have_text("Sara")
+    page.click("#acctBtn")
+    expect(page.locator("#moList li")).to_have_count(2)
+    page.click("#logoutBtn")
+    expect(page.locator("#acctLabel")).to_have_text("Sign in")
+    page.click("#acctBtn")
+    page.fill("#liEmail", "sara@example.com")
+    page.fill("#liPass", "wrong-pass-1")
+    page.click("#liSubmit")
+    expect(page.locator("#liError")).to_have_text("Email or password is incorrect")
+
+
+def test_support_chat_cancels_an_order(page: Page, server: tuple[str, str]) -> None:
+    base, _ = server
+    _open(page, base, "?mode=2d")
+    page.click("#chatBtn")
+    expect(page.locator(".bubble.bot").first).to_contain_text(
+        "I can track, cancel or refund"
+    )
+    page.fill("#chatInput", "I'm Ali, ali@example.com zip 54000, please cancel A101")
+    page.press("#chatInput", "Enter")
+    expect(page.locator(".steps")).to_contain_text("Identity confirmed", timeout=20000)
+    expect(page.locator(".steps")).to_contain_text("Order cancelled")
+    expect(page.locator(".bubble.bot").last).to_have_text("All done.")
+    page.fill("#chatInput", "hello")
+    page.press("#chatInput", "Enter")
+    expect(page.locator(".bubble.bot").last).to_contain_text(
+        "Happy to help", timeout=20000
+    )
+    page.reload()
+    expect(page.locator("body")).to_have_attribute("data-ready", "true", timeout=60000)
+    page.click("#chatBtn")
+    expect(page.locator(".bubble.me")).to_have_count(
+        2
+    )  # the conversation survives a reload
+    assert "llama" not in page.content().lower()
+
+
+def test_support_chat_refuses_someone_elses_order(
+    page: Page, server: tuple[str, str]
+) -> None:
+    base, _ = server
+    _open(page, base, "?mode=2d")
+    page.evaluate("localStorage.removeItem('kv_chat')")
+    page.click("#chatBtn")
+    page.fill("#chatInput", "I'm ali@example.com zip 54000, cancel A104")
+    page.press("#chatInput", "Enter")
+    expect(page.locator(".bubble.bot").last).to_have_text(
+        "Sorry, I cannot do that.", timeout=20000
+    )

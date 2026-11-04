@@ -521,6 +521,7 @@
     renderDirectory();
     renderGrid();
     refreshCart().catch(() => {});
+    api.me().then(setMe).catch(() => setMe(null));
 
     const params = new URLSearchParams(location.search);
     const wanted = params.get("mode") || store.get("kv_mode") || "3d";
@@ -540,7 +541,152 @@
   window.addEventListener("error", (e) => { if (e.message && !/ResizeObserver/.test(e.message)) toast("Something went wrong on this page. Try again.", { bad: true }); });
   window.addEventListener("unhandledrejection", () => toast("Something went wrong. Please try again.", { bad: true }));
 
+  // ---------- accounts ----------
+  const PW_RULE = (v) => (v.length >= 8 && /[A-Za-z]/.test(v) && /\d/.test(v) ? "" : "8+ characters with letters and numbers.");
+  function setMe(me) {
+    state.me = me;
+    $("acctLabel").textContent = me ? me.name.split(" ")[0] : "Sign in";
+  }
+  function authTab(signup) {
+    $("tabIn").setAttribute("aria-selected", String(!signup)); $("tabIn").setAttribute("aria-pressed", String(!signup));
+    $("tabUp").setAttribute("aria-selected", String(signup)); $("tabUp").setAttribute("aria-pressed", String(signup));
+    $("loginForm").hidden = signup; $("signupForm").hidden = !signup;
+    $("auTitle").textContent = signup ? "Create your account" : "Welcome back";
+    hideError("liError"); hideError("suError");
+    (signup ? $("suName") : $("liEmail")).focus();
+  }
+  $("tabIn").addEventListener("click", () => authTab(false));
+  $("tabUp").addEventListener("click", () => authTab(true));
+  $("acctBtn").addEventListener("click", () => {
+    if (state.me) openMyOrders();
+    else { $("authDlg").showModal(); authTab(false); }
+  });
+  $("loginForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (!validate([["liEmail", "liEmailErr", (v) => (EMAIL_RE.test(v.trim()) ? "" : "Enter a valid email.")],
+      ["liPass", "liPassErr", (v) => (v ? "" : "Enter your password.")]])) return;
+    busy($("liSubmit"), async () => {
+      hideError("liError");
+      try {
+        setMe(await api.login($("liEmail").value.trim(), $("liPass").value));
+        $("liPass").value = ""; $("authDlg").close();
+        toast(`Welcome back, ${state.me.name.split(" ")[0]}`);
+      } catch (err) { showError("liError", err.message); }
+    });
+  });
+  $("signupForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (!validate([["suName", "suNameErr", (v) => (v.trim() ? "" : "Please enter your name.")],
+      ["suEmail", "suEmailErr", (v) => (EMAIL_RE.test(v.trim()) ? "" : "Please enter a valid email.")],
+      ["suZip", "suZipErr", (v) => (ZIP_RE.test(v.trim()) ? "" : "3 to 12 letters or numbers.")],
+      ["suPass", "suPassErr", PW_RULE]])) return;
+    busy($("suSubmit"), async () => {
+      hideError("suError");
+      try {
+        setMe(await api.signup({ name: $("suName").value.trim(), email: $("suEmail").value.trim(),
+          zip_code: $("suZip").value.trim(), password: $("suPass").value }));
+        $("suPass").value = ""; $("authDlg").close();
+        toast(`Account created. Welcome, ${state.me.name.split(" ")[0]}!`);
+      } catch (err) { showError("suError", err.message); }
+    });
+  });
+  async function openMyOrders() {
+    $("moHello").textContent = `Signed in as ${state.me.email}`;
+    $("moList").replaceChildren(); $("moEmpty").hidden = true; hideError("moError");
+    $("ordersDlg").showModal();
+    try {
+      const orders = await api.myOrders();
+      $("moEmpty").hidden = orders.length > 0;
+      $("moList").replaceChildren(...orders.map((o) => h("li", {},
+        h("div", {}, h("div", { class: "c", text: o.code }), h("div", { class: "m", text: `${o.item_count} item${o.item_count === 1 ? "" : "s"} · ${money(o.total_cents)}` })),
+        h("span", { class: `status-pill ${o.status}`, text: o.status }),
+        h("button", { class: "btn", type: "button", text: "View", onclick: () => { $("ordersDlg").close(); openTrack({ code: o.code, email: state.me.email, zip: state.me.zip_code }); } }))));
+    } catch (err) {
+      if (err.status === 401) { setMe(null); $("ordersDlg").close(); toast("Please sign in again."); }
+      else showError("moError", err.message);
+    }
+  }
+  $("logoutBtn").addEventListener("click", () => busy($("logoutBtn"), async () => {
+    try { await api.logout(); } catch (_) { /* the cookie is cleared either way */ }
+    setMe(null); $("ordersDlg").close(); toast("Signed out");
+  }));
+  $("checkoutBtn").addEventListener("click", () => {
+    if (!state.me) return;
+    if (!$("coName").value) $("coName").value = state.me.name;
+    if (!$("coEmail").value) $("coEmail").value = state.me.email;
+    if (!$("coZip").value) $("coZip").value = state.me.zip_code;
+  });
+
+  // ---------- support chat ----------
+  const chat = { id: store.get("kv_chat"), loaded: false, busy: false };
+  function bubble(kind, text) {
+    const el = h("div", { class: `bubble ${kind}`, text });
+    $("chatLog").append(el);
+    $("chatLog").scrollTop = $("chatLog").scrollHeight;
+    return el;
+  }
+  function greet() {
+    bubble("bot", state.me
+      ? `Hi ${state.me.name.split(" ")[0]}! I can track, cancel or refund your orders, or help you find something.`
+      : "Hi! I can track, cancel or refund orders, or help you find something. For orders, please share your email and zip code.");
+  }
+  async function openChat() {
+    $("chatPanel").hidden = false; $("chatBtn").hidden = true;
+    $("chatInput").focus();
+    if (chat.loaded) return;
+    chat.loaded = true;
+    if (chat.id) {
+      try {
+        const lines = await api.chatHistory(chat.id);
+        $("chatLog").replaceChildren();
+        greet();
+        lines.forEach((m) => bubble(m.role === "user" ? "me" : "bot", m.content));
+        $("chatSuggest").hidden = lines.length > 0;
+        return;
+      } catch (_) { chat.id = null; store.del("kv_chat"); }
+    }
+    $("chatLog").replaceChildren(); greet();
+  }
+  $("chatBtn").addEventListener("click", openChat);
+  $("chatClose").addEventListener("click", () => { $("chatPanel").hidden = true; $("chatBtn").hidden = false; });
+  document.querySelectorAll("#chatSuggest .suggest").forEach((b) => b.addEventListener("click", () => { $("chatInput").value = b.textContent; $("chatInput").focus(); }));
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  $("chatForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = $("chatInput").value.trim();
+    if (!text || chat.busy) return;
+    if (text.length > 1000) { bubble("bot warn", "Please keep messages under 1000 characters."); return; }
+    chat.busy = true; $("chatSend").disabled = true; $("chatSuggest").hidden = true;
+    $("chatInput").value = "";
+    bubble("me", text);
+    const typing = h("div", { class: "typing", role: "status" }, h("i"), h("i"), h("i"), h("span", { text: "Reading your message…" }));
+    $("chatLog").append(typing); $("chatLog").scrollTop = $("chatLog").scrollHeight;
+    try {
+      const acc = await api.sendChat(text, chat.id);
+      chat.id = acc.conversation_id; store.set("kv_chat", chat.id);
+      let job = null, misses = 0;
+      const started = Date.now();
+      while (Date.now() - started < 6 * 60 * 1000) {
+        await wait(1200);
+        try { job = await api.chatJob(acc.job_id); misses = 0; }
+        catch (err) { if (err.status === 404 || ++misses > 5) throw err; continue; }
+        typing.lastChild.textContent = job.step || "Working on it…";
+        if (job.status === "done") break;
+      }
+      typing.remove();
+      if (!job || job.status !== "done") { bubble("bot warn", "Sorry, that took too long. Please send your message again."); return; }
+      if (job.done_steps.length) $("chatLog").append(h("div", { class: "steps" }, ...job.done_steps.map((s) => h("span", { text: `✓ ${s}` }))));
+      bubble(job.offline ? "bot warn" : "bot", job.reply);
+      if (job.done_steps.some((s) => /cancel|refund/i.test(s))) refreshCart().catch(() => {});
+    } catch (err) {
+      typing.remove();
+      bubble("bot warn", err.message || "Couldn’t send that. Please try again.");
+    } finally {
+      chat.busy = false; $("chatSend").disabled = false; $("chatInput").focus();
+    }
+  });
+
   // test hooks (no secrets here: only navigation helpers)
-  window.KV.app = { openShop, openProduct, openCart, leaveShop, state: () => ({ mode: state.mode, shop: state.shop, floor: state.floor, mall: !!state.mall }) };
+  window.KV.app = { openShop, openProduct, openCart, leaveShop, openChat, state: () => ({ mode: state.mode, shop: state.shop, floor: state.floor, mall: !!state.mall, signedIn: !!state.me }) };
   boot();
 })();

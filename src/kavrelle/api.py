@@ -2,20 +2,25 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Iterator
+import hashlib
+import re
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
+from kavrelle import auth
 from kavrelle import shop as rules
+from kavrelle import support as desk
 from kavrelle.config import Settings
 from kavrelle.db import make_engine, make_session_factory, ping, session_scope
-from kavrelle.models import MAX_LINE_QUANTITY, Cart, Order, Product, Shop
+from kavrelle.models import MAX_LINE_QUANTITY, Cart, Customer, Order, Product, Shop
 
 
 class VariantOut(BaseModel):
@@ -64,6 +69,20 @@ CSP = (
     "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; "
     "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 )
+
+
+def _versioned_index() -> str:
+    """index.html with ?v=<content hash> on our own CSS/JS, so a new release is never
+    hidden behind a stale browser cache."""
+    html = (WEB_DIR / "index.html").read_text("utf-8")
+
+    def stamp(match: re.Match[str]) -> str:
+        path = match.group(1)
+        f = WEB_DIR / path.removeprefix("/static/")
+        digest = hashlib.sha256(f.read_bytes()).hexdigest()[:10] if f.is_file() else "0"
+        return f'"{path}?v={digest}"'
+
+    return re.sub(r'"(/static/[^"?]+\.(?:js|css))"', stamp, html)
 
 
 class CartLineOut(BaseModel):
@@ -143,7 +162,14 @@ def _order_out(order: Order) -> OrderOut:
                            for i in order.items])  # fmt: skip
 
 
-_STATUS = {"not_found": 404, "invalid": 422, "conflict": 409}
+_STATUS = {
+    "not_found": 404,
+    "invalid": 422,
+    "conflict": 409,
+    "rate_limited": 429,
+    "busy": 429,
+}
+SESSION_COOKIE = "kv_session"
 
 
 def _product_out(p: Product) -> ProductOut:
@@ -154,14 +180,76 @@ def _product_out(p: Product) -> ProductOut:
     )  # fmt: skip
 
 
+class SignupIn(BaseModel):
+    name: str = Field(max_length=200)
+    email: str = Field(max_length=200)
+    zip_code: str = Field(max_length=40)
+    password: str = Field(max_length=200)
+
+
+class LoginIn(BaseModel):
+    email: str = Field(max_length=200)
+    password: str = Field(max_length=200)
+
+
+class MeOut(BaseModel):
+    name: str
+    email: str
+    zip_code: str
+
+
+class MyOrderOut(BaseModel):
+    code: str
+    status: str
+    total_cents: int
+    item_count: int
+    created_at: str
+
+
+class ChatIn(BaseModel):
+    message: str = Field(max_length=4000)
+    conversation_id: str | None = Field(default=None, max_length=36)
+
+
+class ChatAccepted(BaseModel):
+    conversation_id: str
+    job_id: str
+
+
+class JobOut(BaseModel):
+    status: str
+    step: str
+    done_steps: list[str]
+    reply: str
+    offline: bool
+
+
+class ChatLine(BaseModel):
+    role: str
+    content: str
+
+
 def create_app(
-    settings: Settings | None = None, engine: Engine | None = None
+    settings: Settings | None = None,
+    engine: Engine | None = None,
+    chat_factory: Callable[[], desk.ChatFn] | None = None,
 ) -> FastAPI:
     settings = settings or Settings.load()
     engine = engine or make_engine(settings.database_url)
     factory: sessionmaker[Session] = make_session_factory(engine)
+    limiter = auth.RateLimiter(limit=5, window=300)
+    support = desk.SupportDesk(factory, chat_factory or desk.ollama_chat_factory)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        yield
+        support.shutdown()
+
     app = FastAPI(
-        title=settings.brand, docs_url="/api/docs", openapi_url="/api/openapi.json"
+        title=settings.brand,
+        docs_url="/api/docs",
+        openapi_url="/api/openapi.json",
+        lifespan=lifespan,
     )
 
     def get_session() -> Iterator[Session]:
@@ -177,17 +265,22 @@ def create_app(
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "same-origin")
         response.headers.setdefault("Content-Security-Policy", CSP)
-        if request.url.path.startswith("/api/"):
+        path = request.url.path
+        if path.startswith("/api/"):
             response.headers.setdefault("Cache-Control", "no-store")
+        elif path.startswith(("/static/img/", "/static/vendor/")):
+            response.headers.setdefault("Cache-Control", "public, max-age=604800")
+        elif path.startswith("/static/"):
+            response.headers.setdefault("Cache-Control", "no-cache")
         return response
 
     if WEB_DIR.is_dir():
         app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 
         @app.get("/", include_in_schema=False)
-        def index() -> FileResponse:
-            return FileResponse(
-                WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"}
+        def index() -> HTMLResponse:
+            return HTMLResponse(
+                _versioned_index(), headers={"Cache-Control": "no-cache"}
             )
 
     @app.get("/api/catalog", response_model=list[CatalogShop])
@@ -310,4 +403,83 @@ def create_app(
             )
             return _order_out(order)
 
+    # ---------- accounts ----------
+    def _client(request: Request) -> str:
+        return request.client.host if request.client else "unknown"
+
+    def _set_cookie(response: Response, token: str) -> None:
+        response.set_cookie(SESSION_COOKIE, token, max_age=auth.SESSION_DAYS * 86400,
+                            httponly=True, samesite="lax", secure=settings.secure_cookies, path="/")  # fmt: skip
+
+    def _me(request: Request, s: Session) -> Customer | None:
+        return auth.current_customer(s, request.cookies.get(SESSION_COOKIE))
+
+    @app.post("/api/auth/signup", response_model=MeOut, status_code=201)
+    def signup(body: SignupIn, response: Response) -> MeOut:
+        with session_scope(factory) as s:
+            c = auth.signup(
+                s, rules.Buyer(body.name, body.email, body.zip_code), body.password
+            )
+            _set_cookie(response, auth.start_session(s, c))
+            return MeOut(name=c.name, email=c.email, zip_code=c.zip_code)
+
+    @app.post("/api/auth/login", response_model=MeOut)
+    def login(body: LoginIn, request: Request, response: Response) -> MeOut:
+        with session_scope(factory) as s:
+            c = auth.login(s, body.email, body.password, limiter, _client(request))
+            _set_cookie(response, auth.start_session(s, c))
+            return MeOut(name=c.name, email=c.email, zip_code=c.zip_code)
+
+    @app.post("/api/auth/logout", status_code=204)
+    def logout(request: Request, response: Response) -> Response:
+        with session_scope(factory) as s:
+            auth.end_session(s, request.cookies.get(SESSION_COOKIE))
+        response.delete_cookie(SESSION_COOKIE, path="/")
+        response.status_code = 204
+        return response
+
+    @app.get("/api/me", response_model=MeOut)
+    def me(request: Request) -> MeOut:
+        with session_scope(factory) as s:
+            c = _me(request, s)
+            if c is None:
+                raise HTTPException(status_code=401, detail="Please sign in")
+            return MeOut(name=c.name, email=c.email, zip_code=c.zip_code)
+
+    @app.get("/api/me/orders", response_model=list[MyOrderOut])
+    def my_orders(request: Request) -> list[MyOrderOut]:
+        with session_scope(factory) as s:
+            c = _me(request, s)
+            if c is None:
+                raise HTTPException(status_code=401, detail="Please sign in")
+            orders = s.scalars(select(Order).where(Order.customer_id == c.id)
+                               .options(selectinload(Order.items)).order_by(Order.id.desc())).all()  # fmt: skip
+            return [MyOrderOut(code=o.code, status=o.status, total_cents=o.total_cents,
+                               item_count=sum(i.quantity for i in o.items),
+                               created_at=o.created_at.isoformat()) for o in orders]  # fmt: skip
+
+    # ---------- support chat ----------
+    @app.post("/api/support/messages", response_model=ChatAccepted, status_code=202)
+    def send_message(body: ChatIn, request: Request) -> ChatAccepted:
+        with session_scope(factory) as s:
+            c = _me(request, s)
+            customer_id = c.id if c else None
+        job = support.submit(body.message, body.conversation_id, customer_id)
+        return ChatAccepted(conversation_id=job.conversation, job_id=job.id)
+
+    @app.get("/api/support/jobs/{job_id}", response_model=JobOut)
+    def job_status(job_id: str) -> JobOut:
+        job = support.job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="That reply has expired")
+        return JobOut(status=job.status, step=job.step, done_steps=list(job.done_steps),
+                      reply=job.reply, offline=job.offline)  # fmt: skip
+
+    @app.get(
+        "/api/support/conversations/{conversation_id}", response_model=list[ChatLine]
+    )
+    def conversation(conversation_id: str) -> list[ChatLine]:
+        return [ChatLine(**m) for m in support.history(conversation_id)]
+
+    app.state.support = support
     return app

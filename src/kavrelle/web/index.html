@@ -53,6 +53,7 @@
       <button type="button" data-mode="3d" aria-pressed="true">3D</button>
       <button type="button" data-mode="2d" aria-pressed="false">Grid</button>
     </div>
+    <button class="btn" type="button" id="acctBtn"><span aria-hidden="true">👤</span><span class="label" id="acctLabel">Sign in</span></button>
     <button class="btn" type="button" id="trackBtn"><span aria-hidden="true">📦</span><span class="label">Track order</span></button>
     <button class="btn primary" type="button" id="cartBtn" aria-haspopup="dialog">
       <span>Cart</span><span class="badge" id="cartCount" aria-label="items in cart">0</span>
@@ -163,6 +164,64 @@
     <div class="row"><button class="btn" type="button" id="trAnother">Track another</button><button class="btn" type="button" id="trCancel" hidden>Cancel order</button><button class="btn primary" type="button" data-close>Done</button></div>
   </div>
 </dialog>
+
+<dialog id="authDlg" aria-labelledby="auTitle">
+  <div class="dlg">
+    <div class="seg tabs" role="tablist" aria-label="Account">
+      <button type="button" role="tab" id="tabIn" aria-selected="true" aria-pressed="true">Sign in</button>
+      <button type="button" role="tab" id="tabUp" aria-selected="false" aria-pressed="false">Create account</button>
+    </div>
+    <h2 id="auTitle">Welcome back</h2>
+    <form id="loginForm" class="stack" novalidate>
+      <div class="field"><label for="liEmail">Email</label><input id="liEmail" type="email" autocomplete="email" maxlength="160" required><div class="err" id="liEmailErr"></div></div>
+      <div class="field"><label for="liPass">Password</label><input id="liPass" type="password" autocomplete="current-password" maxlength="128" required><div class="err" id="liPassErr"></div></div>
+      <p class="form-error" id="liError" role="alert" hidden></p>
+      <div class="row"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit" id="liSubmit">Sign in</button></div>
+    </form>
+    <form id="signupForm" class="stack" novalidate hidden>
+      <div class="field"><label for="suName">Full name</label><input id="suName" autocomplete="name" maxlength="80" required><div class="err" id="suNameErr"></div></div>
+      <div class="field"><label for="suEmail">Email</label><input id="suEmail" type="email" autocomplete="email" maxlength="160" required><div class="err" id="suEmailErr"></div></div>
+      <div class="row">
+        <div class="field"><label for="suZip">Zip code</label><input id="suZip" autocomplete="postal-code" maxlength="12" required><div class="err" id="suZipErr"></div></div>
+        <div class="field"><label for="suPass">Password</label><input id="suPass" type="password" autocomplete="new-password" maxlength="128" required><div class="err" id="suPassErr"></div></div>
+      </div>
+      <p class="hint-text">8+ characters with letters and numbers. Already ordered as a guest? Use the same email and zip to see those orders.</p>
+      <p class="form-error" id="suError" role="alert" hidden></p>
+      <div class="row"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit" id="suSubmit">Create account</button></div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="ordersDlg" aria-labelledby="moTitle">
+  <div class="dlg">
+    <div class="spread"><h2 id="moTitle">My orders</h2><button class="btn ghost" type="button" id="logoutBtn">Sign out</button></div>
+    <p class="sub" id="moHello"></p>
+    <ul class="my-orders" id="moList"></ul>
+    <div class="cart-empty" id="moEmpty" hidden>No orders yet. Every shop is one click away.</div>
+    <p class="form-error" id="moError" role="alert" hidden></p>
+    <div class="row"><button class="btn primary" type="button" data-close>Close</button></div>
+  </div>
+</dialog>
+
+<button class="chat-fab" type="button" id="chatBtn" aria-haspopup="dialog" aria-controls="chatPanel"><span aria-hidden="true">💬</span> Ask Kavrelle</button>
+<section class="chat" id="chatPanel" aria-label="Kavrelle Support" hidden>
+  <header class="chat-head">
+    <div class="chat-avatar" aria-hidden="true">K</div>
+    <div><div class="chat-title">Kavrelle Support</div><div class="chat-sub">Orders, returns and shopping help</div></div>
+    <button class="close-sm" type="button" id="chatClose" aria-label="Close chat">×</button>
+  </header>
+  <div class="chat-log" id="chatLog" aria-live="polite"></div>
+  <div class="chat-suggest" id="chatSuggest">
+    <button type="button" class="suggest">Where is my order?</button>
+    <button type="button" class="suggest">I want to cancel an order</button>
+    <button type="button" class="suggest">Find me a black dress</button>
+  </div>
+  <form class="chat-form" id="chatForm">
+    <label class="sr-only" for="chatInput">Message</label>
+    <input id="chatInput" autocomplete="off" maxlength="1000" placeholder="Write a message…">
+    <button class="btn primary" type="submit" id="chatSend" aria-label="Send">➤</button>
+  </form>
+</section>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
 

@@ -74,5 +74,14 @@
     checkout: (t, buyer) => request("POST", `/api/cart/${enc(t)}/checkout`, buyer, { timeout: 20000 }),
     lookup: (code, email, zip) => request("POST", `/api/orders/${enc(code)}/lookup`, { email, zip_code: zip }),
     cancel: (code, email, zip) => request("POST", `/api/orders/${enc(code)}/cancel`, { email, zip_code: zip }),
+    me: () => request("GET", "/api/me", null, { retries: 0 }),
+    myOrders: () => request("GET", "/api/me/orders"),
+    signup: (body) => request("POST", "/api/auth/signup", body),
+    login: (email, password) => request("POST", "/api/auth/login", { email, password }),
+    logout: () => request("POST", "/api/auth/logout"),
+    sendChat: (message, conversationId) =>
+      request("POST", "/api/support/messages", { message, conversation_id: conversationId || null }, { timeout: 15000 }),
+    chatJob: (id) => request("GET", `/api/support/jobs/${enc(id)}`, null, { retries: 1, timeout: 10000 }),
+    chatHistory: (id) => request("GET", `/api/support/conversations/${enc(id)}`),
   };
 })();
