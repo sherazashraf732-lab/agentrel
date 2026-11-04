@@ -138,6 +138,8 @@ def create_app(
 
     @app.get("/api/evaluations")
     def list_evaluations() -> dict[str, Any]:
+        # read job states first: a job marked done has already written its report
+        job_list = [dict(j) for j in jobs.values()]
         reports = []
         if results_dir.exists():
             for path in sorted(results_dir.glob("*/report.json"), reverse=True):
@@ -151,7 +153,7 @@ def create_app(
                         "accuracy": data.get("accuracy"),
                     }
                 )
-        return {"jobs": list(jobs.values()), "reports": reports}
+        return {"jobs": job_list, "reports": reports}
 
     @app.get("/api/evaluations/{name}")
     def get_evaluation(name: str) -> dict[str, Any]:

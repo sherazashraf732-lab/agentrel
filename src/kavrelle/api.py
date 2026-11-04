@@ -16,16 +16,20 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session, selectinload, sessionmaker
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from kavrelle import auth
 from kavrelle import lab as labmod
+from kavrelle import mailer as mail
 from kavrelle import shop as rules
 from kavrelle import support as desk
 from kavrelle.config import Settings
 from kavrelle.db import make_engine, make_session_factory, ping, session_scope
 from kavrelle.models import (
+    CONTACT_TOPICS,
     MAX_LINE_QUANTITY,
     Cart,
+    ContactMessage,
     Conversation,
     Customer,
     EvalRun,
@@ -85,10 +89,15 @@ CSP = (
 )
 
 
-def _versioned_index(page: str = "index.html") -> str:
+def _public_base(request: Request) -> str:
+    """The site's public address for canonical links, Open Graph and the sitemap."""
+    return (os.environ.get("KAVRELLE_PUBLIC_URL") or str(request.base_url)).rstrip("/")
+
+
+def _versioned_index(page: str = "index.html", base: str = "") -> str:
     """index.html with ?v=<content hash> on our own CSS/JS, so a new release is never
-    hidden behind a stale browser cache."""
-    html = (WEB_DIR / page).read_text("utf-8")
+    hidden behind a stale browser cache. __BASE__ becomes the public site address."""
+    html = (WEB_DIR / page).read_text("utf-8").replace("__BASE__", base)
 
     def stamp(match: re.Match[str]) -> str:
         path = match.group(1)
@@ -203,6 +212,28 @@ class SignupIn(BaseModel):
     email: str = Field(max_length=200)
     zip_code: str = Field(max_length=40)
     password: str = Field(max_length=200)
+    accept_terms: bool = False
+
+
+class ForgotIn(BaseModel):
+    email: str = Field(max_length=200)
+
+
+class ResetIn(BaseModel):
+    token: str = Field(max_length=200)
+    password: str = Field(max_length=200)
+
+
+class ContactIn(BaseModel):
+    name: str = Field(max_length=200)
+    email: str = Field(max_length=200)
+    topic: str = Field(max_length=20)
+    message: str = Field(max_length=5000)
+    website: str = Field(default="", max_length=200)  # honeypot: people leave it empty
+
+
+PAGES = {"/about": "about", "/help": "help", "/contact": "contact", "/terms": "terms",
+         "/privacy": "privacy", "/reset": "reset"}  # fmt: skip
 
 
 class LoginIn(BaseModel):
@@ -252,11 +283,15 @@ def create_app(
     engine: Engine | None = None,
     chat_factory: Callable[[], desk.ChatFn] | None = None,
     evaluator: labmod.Evaluator | None = None,
+    mailer: mail.Mailer | None = None,
 ) -> FastAPI:
     settings = settings or Settings.load()
     engine = engine or make_engine(settings.database_url)
     factory: sessionmaker[Session] = make_session_factory(engine)
     limiter = auth.RateLimiter(limit=5, window=300)
+    forgot_limiter = auth.RateLimiter(limit=3, window=900)
+    contact_limiter = auth.RateLimiter(limit=5, window=600)
+    postman = mailer or mail.Mailer()
     support = desk.SupportDesk(factory, chat_factory or desk.ollama_chat_factory)
     lab = labmod.Lab(
         factory,
@@ -271,6 +306,7 @@ def create_app(
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         yield
         support.shutdown()
+        postman.shutdown()
 
     app = FastAPI(
         title=settings.brand,
@@ -311,11 +347,55 @@ def create_app(
                 headers={"Cache-Control": "no-cache", "X-Robots-Tag": "noindex"},
             )
 
-        @app.get("/", include_in_schema=False)
-        def index() -> HTMLResponse:
-            return HTMLResponse(
-                _versioned_index(), headers={"Cache-Control": "no-cache"}
+        def _page(name: str) -> Callable[[Request], HTMLResponse]:
+            def show(request: Request) -> HTMLResponse:
+                return HTMLResponse(
+                    _versioned_index(f"pages/{name}.html", _public_base(request)),
+                    headers={"Cache-Control": "no-cache"},
+                )
+
+            return show
+
+        for route, name in PAGES.items():
+            app.add_api_route(
+                route, _page(name), methods=["GET"], include_in_schema=False
             )
+
+        @app.exception_handler(StarletteHTTPException)
+        def not_found(request: Request, exc: StarletteHTTPException) -> Response:
+            path = request.url.path
+            if exc.status_code == 404 and not path.startswith(("/api/", "/static/")):
+                return HTMLResponse(
+                    _versioned_index("pages/404.html", _public_base(request)),
+                    status_code=404,
+                )
+            return JSONResponse(
+                {"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers
+            )
+
+        @app.get("/", include_in_schema=False)
+        def index(request: Request) -> HTMLResponse:
+            return HTMLResponse(
+                _versioned_index("index.html", _public_base(request)),
+                headers={"Cache-Control": "no-cache"},
+            )
+
+        @app.get("/robots.txt", include_in_schema=False)
+        def robots(request: Request) -> Response:
+            body = ("User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /reset\n\n"
+                    f"Sitemap: {_public_base(request)}/sitemap.xml\n")  # fmt: skip
+            return Response(body, media_type="text/plain")
+
+        @app.get("/sitemap.xml", include_in_schema=False)
+        def sitemap(request: Request) -> Response:
+            base = _public_base(request)
+            urls = "".join(
+                f"<url><loc>{base}{path}</loc><changefreq>{freq}</changefreq><priority>{prio}</priority></url>"
+                for path, freq, prio in [("/", "weekly", "1.0"), ("/help", "monthly", "0.6"), ("/about", "monthly", "0.5"),
+                                         ("/contact", "yearly", "0.5"), ("/terms", "yearly", "0.3"), ("/privacy", "yearly", "0.3")]
+            )  # fmt: skip
+            xml = f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>'
+            return Response(xml, media_type="application/xml")
 
     @app.get("/api/catalog", response_model=list[CatalogShop])
     def catalog_all(session: Session = Depends(get_session)) -> list[CatalogShop]:  # noqa: B008
@@ -417,7 +497,13 @@ def create_app(
             order = rules.checkout(
                 s, token, rules.Buyer(body.name, body.email, body.zip_code)
             )
-            return _order_out(order)
+            out = _order_out(order)
+            lines = [
+                (i.name, i.variant, i.quantity, i.unit_price_cents) for i in out.items
+            ]
+            postman.send(mail.order_confirmation(order.customer.name, order.customer.email, order.code,
+                                                 lines, order.total_cents))  # fmt: skip
+            return out
 
     @app.post("/api/orders/{code}/lookup", response_model=OrderOut)
     def lookup_order(code: str, body: IdentityIn) -> OrderOut:
@@ -427,7 +513,13 @@ def create_app(
     @app.post("/api/orders/{code}/cancel", response_model=OrderOut)
     def cancel(code: str, body: IdentityIn) -> OrderOut:
         with session_scope(factory) as s:
-            return _order_out(rules.cancel_order(s, code, body.email, body.zip_code))
+            order = rules.cancel_order(s, code, body.email, body.zip_code)
+            postman.send(
+                mail.order_cancelled(
+                    order.customer.name, order.customer.email, order.code
+                )
+            )
+            return _order_out(order)
 
     @app.post("/api/orders/{code}/refund", response_model=OrderOut)
     def refund(code: str, body: RefundIn) -> OrderOut:
@@ -435,6 +527,8 @@ def create_app(
             order = rules.refund_order(
                 s, code, body.email, body.zip_code, body.amount_cents
             )
+            postman.send(mail.order_refunded(order.customer.name, order.customer.email, order.code,
+                                             body.amount_cents))  # fmt: skip
             return _order_out(order)
 
     # ---------- accounts ----------
@@ -451,11 +545,84 @@ def create_app(
     @app.post("/api/auth/signup", response_model=MeOut, status_code=201)
     def signup(body: SignupIn, response: Response) -> MeOut:
         with session_scope(factory) as s:
+            if not body.accept_terms:
+                raise rules.Invalid(
+                    "Please accept the Terms of Service and Privacy Policy"
+                )
             c = auth.signup(
                 s, rules.Buyer(body.name, body.email, body.zip_code), body.password
             )
             _set_cookie(response, auth.start_session(s, c))
+            postman.send(mail.welcome(c.name, c.email))
             return MeOut(name=c.name, email=c.email, zip_code=c.zip_code)
+
+    @app.post("/api/auth/forgot", status_code=202)
+    def forgot(body: ForgotIn, request: Request) -> dict[str, str]:
+        """Same answer whether or not the account exists, so emails can't be probed."""
+        answer = {"detail": "If that email has an account, a reset link is on its way."}
+        key = f"forgot:{_client(request)}:{body.email.strip().lower()}"
+        if forgot_limiter.blocked(key):
+            return answer
+        forgot_limiter.fail(key)
+        with session_scope(factory) as s:
+            started = auth.request_reset(s, body.email)
+            if started:
+                c, token = started
+                link = f"{str(request.base_url).rstrip('/')}/reset?token={token}"
+                postman.send(
+                    mail.password_reset(c.name, c.email, link, auth.RESET_MINUTES)
+                )
+        return answer
+
+    @app.post("/api/auth/reset", status_code=204)
+    def reset(body: ResetIn, response: Response) -> Response:
+        with session_scope(factory) as s:
+            auth.reset_password(s, body.token, body.password)
+        response.delete_cookie(SESSION_COOKIE, path="/")
+        response.status_code = 204
+        return response
+
+    @app.post("/api/contact", status_code=202)
+    def contact(body: ContactIn, request: Request) -> dict[str, str]:
+        answer = {"detail": "Thanks! We got your message and will reply by email."}
+        if (
+            body.website
+        ):  # a bot filled the hidden field: accept silently, store nothing
+            return answer
+        key = f"contact:{_client(request)}"
+        if contact_limiter.blocked(key):
+            raise auth.RateLimited(
+                "You have sent several messages already. Please try again later."
+            )
+        name, email, text = (
+            body.name.strip(),
+            body.email.strip().lower(),
+            body.message.strip(),
+        )
+        if not 1 <= len(name) <= 80:
+            raise rules.Invalid("Please enter your name")
+        if not rules.EMAIL_RE.match(email) or len(email) > 160:
+            raise rules.Invalid("Please enter a valid email")
+        if body.topic not in CONTACT_TOPICS:
+            raise rules.Invalid("Please choose a topic")
+        if not 10 <= len(text) <= 3000:
+            raise rules.Invalid("Please write between 10 and 3000 characters")
+        contact_limiter.fail(key)
+        with session_scope(factory) as s:
+            s.add(
+                ContactMessage(name=name, email=email, topic=body.topic, message=text)
+            )
+        postman.send(mail.contact_receipt(name, email, body.topic))
+        inbox = os.environ.get("KAVRELLE_SUPPORT_INBOX", "")
+        if inbox:
+            postman.send(
+                mail.Email(
+                    inbox,
+                    f"[Contact/{body.topic}] {name}",
+                    f"From: {name} <{email}>\n\n{text}",
+                )
+            )
+        return answer
 
     @app.post("/api/auth/login", response_model=MeOut)
     def login(body: LoginIn, request: Request, response: Response) -> MeOut:
@@ -523,6 +690,16 @@ def create_app(
         if not c.is_admin:
             raise HTTPException(status_code=403, detail="Admins only")
         return c
+
+    @app.get("/api/admin/messages")
+    def admin_messages(request: Request) -> list[dict[str, Any]]:
+        with session_scope(factory) as s:
+            _admin(request, s)
+            rows = s.scalars(
+                select(ContactMessage).order_by(ContactMessage.id.desc()).limit(200)
+            )
+            return [{"id": m.id, "name": m.name, "email": m.email, "topic": m.topic, "message": m.message,
+                     "created_at": m.created_at.isoformat()} for m in rows]  # fmt: skip
 
     def _require_admin(request: Request) -> None:
         with session_scope(factory) as s:
@@ -654,5 +831,6 @@ def create_app(
                 for m in c.messages]}  # fmt: skip
 
     app.state.support = support
+    app.state.mailer = postman
     app.state.lab = lab
     return app

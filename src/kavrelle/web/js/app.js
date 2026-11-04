@@ -115,6 +115,12 @@
       }
       root.append(sec);
     }
+    root.append(h("footer", { class: "site-foot" },
+      h("div", { class: "wordmark", text: "KAVRELLE" }),
+      h("nav", { "aria-label": "Site links" }, ...[["Help & FAQ", "/help"], ["Contact", "/contact"], ["About", "/about"],
+        ["Terms", "/terms"], ["Privacy", "/privacy"]].map(([t, href]) => h("a", { href, text: t }))),
+      h("p", { text: "A demonstration store. No payment is taken and nothing is shipped." }),
+      h("p", { class: "credit", text: "© 2026 Kavrelle. Created by Sheraz Ashraf. All rights reserved." })));
   }
 
   // ---------- navigation ----------
@@ -143,7 +149,8 @@
       canvas: $("scene"), catalog: state.catalog,
       lowGraphics: (params && params.get("low") === "1") || (navigator.hardwareConcurrency || 8) <= 2,
       onProgress: (f) => loadProgress(0.15 + f * 0.85, "Hanging the photos…"),
-      onPickProduct: openProduct, onEnterShop: openShop, onHover,
+      onPickProduct: openProduct, onEnterShop: openShop, onHover, onLeaveShop: () => leaveShop(),
+      onFloor: (f) => { setFloor(f); toast(`Floor ${f}`); },
       onContextLost: () => { state.mall = null; mallStarting = null; setMode("2d", true); toast("3D view stopped, switched to the grid.", { bad: true }); },
     }).then((m) => { state.mall = m; return true; })
       .catch((e) => { console.error(e); mallStarting = null; return false; })
@@ -505,6 +512,8 @@
     if (!hit) { tip.hidden = true; return; }
     tip.replaceChildren();
     if (hit.kind === "product") tip.append(h("b", { text: hit.info.name }), h("span", { text: money(hit.info.price_cents, hit.info.currency) }));
+    else if (hit.kind === "exit") tip.append(h("b", { text: "Back to the concourse" }));
+    else if (hit.kind === "floor") tip.append(h("b", { text: `Ride the escalator to floor ${hit.to}` }));
     else tip.append(h("b", { text: `Enter ${state.shops.get(hit.slug).name}` }));
     tip.style.left = `${x}px`; tip.style.top = `${y}px`; tip.hidden = false;
   }
@@ -535,6 +544,8 @@
     const hash = location.hash.slice(1);
     if (hash.startsWith("shop-")) openShop(hash.slice(5), { noHash: true });
     else if (hash.startsWith("product-") && state.products.has(hash.slice(8))) { const p = state.products.get(hash.slice(8)); openShop(p.shop, { noHash: true }); openProduct(p.slug); }
+    const query = (params.get("q") || "").slice(0, 80);
+    if (query) { $("q").value = query; runSearch(query); $("q").focus(); } // search links from search engines
     document.body.dataset.ready = "true";
   }
 
@@ -580,11 +591,13 @@
       ["suEmail", "suEmailErr", (v) => (EMAIL_RE.test(v.trim()) ? "" : "Please enter a valid email.")],
       ["suZip", "suZipErr", (v) => (ZIP_RE.test(v.trim()) ? "" : "3 to 12 letters or numbers.")],
       ["suPass", "suPassErr", PW_RULE]])) return;
+    if (!$("suTerms").checked) { $("suTermsErr").textContent = "Please accept the Terms and Privacy Policy."; $("suTerms").focus(); return; }
+    $("suTermsErr").textContent = "";
     busy($("suSubmit"), async () => {
       hideError("suError");
       try {
         setMe(await api.signup({ name: $("suName").value.trim(), email: $("suEmail").value.trim(),
-          zip_code: $("suZip").value.trim(), password: $("suPass").value }));
+          zip_code: $("suZip").value.trim(), password: $("suPass").value, accept_terms: true }));
         $("suPass").value = ""; $("authDlg").close();
         toast(`Account created. Welcome, ${state.me.name.split(" ")[0]}!`);
       } catch (err) { showError("suError", err.message); }
@@ -687,6 +700,7 @@
   });
 
   // test hooks (no secrets here: only navigation helpers)
-  window.KV.app = { openShop, openProduct, openCart, leaveShop, openChat, state: () => ({ mode: state.mode, shop: state.shop, floor: state.floor, mall: !!state.mall, signedIn: !!state.me }) };
+  window.KV.app = { openShop, openProduct, openCart, leaveShop, openChat, state: () => ({ mode: state.mode, shop: state.shop, floor: state.floor, mall: !!state.mall, signedIn: !!state.me }),
+    sign: (kind) => (state.mall ? state.mall.signOnScreen(kind) : null), cam: () => (state.mall ? state.mall.state() : null) };
   boot();
 })();

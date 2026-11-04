@@ -12,6 +12,7 @@ import socket
 import threading
 import time
 from collections.abc import Iterator
+from email import message_from_bytes, policy
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,7 @@ from kavrelle import migrate
 from kavrelle.api import create_app
 from kavrelle.config import Settings
 from kavrelle.db import make_engine, make_session_factory, session_scope
+from kavrelle.mailer import Mailer
 from kavrelle.models import Customer, Product, Variant
 from kavrelle.seed import seed
 
@@ -115,6 +117,7 @@ def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple[str, str]
                 engine=engine,
                 chat_factory=lambda: rule_based_chat,
                 evaluator=fake_evaluator,
+                mailer=Mailer(outbox=db.parent / "outbox"),
             ),
             host="127.0.0.1",
             port=port,
@@ -352,6 +355,9 @@ def test_create_account_then_see_my_orders(page: Page, server: tuple[str, str]) 
     expect(page.locator("#suPassErr")).to_contain_text("8+ characters")
     page.fill("#suPass", "monitor2026")
     page.click("#suSubmit")
+    expect(page.locator("#suTermsErr")).to_contain_text("accept the Terms")
+    page.check("#suTerms")
+    page.click("#suSubmit")
     expect(page.locator("#acctLabel")).to_have_text("Sara")
     page.click("#acctBtn")
     expect(page.locator("#moList li")).to_have_count(2)
@@ -375,7 +381,9 @@ def test_support_chat_cancels_an_order(page: Page, server: tuple[str, str]) -> N
     page.press("#chatInput", "Enter")
     expect(page.locator(".steps")).to_contain_text("Identity confirmed", timeout=20000)
     expect(page.locator(".steps")).to_contain_text("Order cancelled")
-    expect(page.locator(".bubble.bot").last).to_have_text("All done.")
+    expect(page.locator(".bubble.bot").last).to_have_text(
+        "Order A101 is now cancelled."
+    )  # a vague reply is replaced by the facts
     page.fill("#chatInput", "hello")
     page.press("#chatInput", "Enter")
     expect(page.locator(".bubble.bot").last).to_contain_text(
@@ -411,7 +419,8 @@ def test_admin_console_runs_an_evaluation_and_shows_12_metrics(
     page.goto(f"{base}/admin#lab")
     expect(page.locator("#gate")).to_be_visible()
     page.request.post(f"{base}/api/auth/signup", data={"name": "Owner", "email": "owner@example.com",
-                                                        "zip_code": "54000", "password": "console2026"})  # fmt: skip
+                                                        "zip_code": "54000", "password": "console2026",
+                                                        "accept_terms": True})  # fmt: skip
     engine = make_engine(url)
     with session_scope(make_session_factory(engine)) as s:
         s.execute(
@@ -432,3 +441,164 @@ def test_admin_console_runs_an_evaluation_and_shows_12_metrics(
     expect(page.locator("#v-chats")).to_be_visible()
     page.click('button[data-view="overview"]')
     expect(page.locator(".kpi")).to_have_count(6)
+
+
+# ---------- website essentials ----------
+
+
+def _outbox(url: str) -> Path:
+    return Path(url.removeprefix("sqlite:///")).parent / "outbox"
+
+
+def test_footer_links_lead_to_real_pages(page: Page, server: tuple[str, str]) -> None:
+    base, _ = server
+    _open(page, base, "?mode=2d")
+    page.locator(".site-foot a", has_text="Privacy").click()
+    expect(page.locator("h1")).to_have_text("Privacy Policy")
+    expect(page.locator(".toc a")).to_have_count(10)
+    page.locator(".toc a", has_text="Cookies").click()
+    expect(page.locator("#cookies")).to_be_in_viewport()
+    for path, heading in [
+        ("/terms", "Terms of Service"),
+        ("/about", "A mall you can walk through."),
+        ("/help", "How can we help?"),
+    ]:
+        page.goto(f"{base}{path}")
+        expect(page.locator("h1")).to_have_text(heading)
+    page.locator("summary", has_text="Can I cancel?").click()
+    expect(page.locator("details[open] p")).to_contain_text(
+        "while the order is pending"
+    )
+    page.goto(f"{base}/no-such-page")
+    expect(page.locator("h1")).to_have_text("This shop has moved out.")
+    page.click("text=Back to the mall")
+    expect(page.locator("body")).to_have_attribute("data-ready", "true", timeout=60000)
+
+
+def test_contact_form_validates_then_sends(page: Page, server: tuple[str, str]) -> None:
+    base, url = server
+    page.goto(f"{base}/contact")
+    page.click("#cSubmit")
+    expect(page.locator("#cNameErr")).to_have_text("Please enter your name.")
+    expect(page.locator("#cTopicErr")).to_have_text("Please choose a topic.")
+    page.fill("#cName", "Hina Raza")
+    page.fill("#cEmail", "hina@example.com")
+    page.select_option("#cTopic", "returns")
+    page.fill("#cMsg", "Can I return a scarf after two weeks?")
+    expect(page.locator("#cCount")).to_have_text("37 / 3000")
+    page.click("#cSubmit")
+    expect(page.locator("#contactDone")).to_be_visible()
+    expect(page.locator("#contactForm")).to_be_hidden()
+    deadline = time.time() + 10
+    while time.time() < deadline and not any("We got your message" in f.read_text("utf-8", "replace")
+                                             for f in _outbox(url).glob("*.eml")):  # fmt: skip
+        time.sleep(0.1)
+    assert any(
+        "hina@example.com" in f.read_text("utf-8", "replace")
+        for f in _outbox(url).glob("*.eml")
+    )
+
+
+def test_forgot_and_reset_password_in_the_browser(
+    page: Page, server: tuple[str, str]
+) -> None:
+    base, url = server
+    page.request.post(f"{base}/api/auth/signup", data={"name": "Nida Khan", "email": "nida@example.com",
+                                                        "zip_code": "60000", "password": "garden2026",
+                                                        "accept_terms": True})  # fmt: skip
+    page.request.post(f"{base}/api/auth/logout")  # signing up signed this browser in
+    _open(page, base, "?mode=2d")
+    page.click("#acctBtn")
+    page.click("#forgotLink")
+    expect(page.locator("h1")).to_have_text("Reset your password")
+    page.fill("#fEmail", "nida@example.com")
+    page.click("#fSubmit")
+    expect(page.locator("#doneTitle")).to_have_text("Check your inbox")
+    link = ""
+    deadline = time.time() + 10
+    while time.time() < deadline and not link:
+        for f in _outbox(url).glob("*.eml"):
+            msg = message_from_bytes(f.read_bytes(), policy=policy.default)
+            part = msg.get_body(("plain",))  # type: ignore[attr-defined]
+            found = re.search(
+                r"(http://127\.0\.0\.1:\d+/reset\?token=[\w-]+)",
+                str(part.get_content()) if part else "",
+            )
+            if found and msg["To"] == "nida@example.com":
+                link = found.group(1)
+        time.sleep(0.1)
+    assert link, "reset email with link"
+    page.goto(link)
+    expect(page.locator("h1")).to_have_text("Choose a new password")
+    assert "token" not in page.url, "token is removed from the address bar"
+    page.fill("#rPass", "garden2027")
+    page.fill("#rPass2", "garden2028")
+    page.click("#rSubmit")
+    expect(page.locator("#rPass2Err")).to_have_text("The two passwords don’t match.")
+    page.fill("#rPass2", "garden2027")
+    page.click("#rSubmit")
+    expect(page.locator("#doneTitle")).to_have_text("Password changed")
+    r = page.request.post(
+        f"{base}/api/auth/login",
+        data={"email": "nida@example.com", "password": "garden2027"},
+    )
+    assert r.status == 200
+
+
+def test_info_pages_fit_a_phone(browser, server: tuple[str, str]) -> None:  # type: ignore[no-untyped-def]
+    base, _ = server
+    ctx = browser.new_context(viewport={"width": 375, "height": 740})
+    pg = ctx.new_page()
+    pg.route("https://fonts.**", lambda r: r.abort())
+    for path in [
+        "/terms",
+        "/privacy",
+        "/help",
+        "/contact",
+        "/about",
+        "/reset",
+        "/nope",
+    ]:
+        pg.goto(f"{base}{path}")
+        overflow = pg.evaluate(
+            "document.documentElement.scrollWidth - document.documentElement.clientWidth"
+        )
+        assert overflow <= 0, f"{path} scrolls sideways by {overflow}px"
+    ctx.close()
+
+
+def test_3d_mouse_only_navigation(page: Page, server: tuple[str, str]) -> None:
+    """Turn all the way round, walk out of a shop and ride the escalator using only the mouse."""
+    base, _ = server
+    _open(page, base, "?mode=3d")
+    if not page.evaluate("KV.app.state().mall"):
+        pytest.skip("no WebGL on this machine")
+    page.click('#dirFloors button[data-shop="maison-elle"]')
+    page.wait_for_function("() => KV.app.cam().mode === 'shop'", timeout=60000)
+    box = page.locator("#scene").bounding_box()
+    assert box
+    cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    page.mouse.move(cx, cy)
+    page.mouse.down()
+    for i in range(1, 31):  # drag ~630px = a half turn (yaw is not clamped any more)
+        page.mouse.move(cx - i * 21, cy)
+    page.mouse.up()
+    page.wait_for_function("() => KV.app.sign('exit') !== null", timeout=10000)
+    page.wait_for_timeout(3000)  # let the camera settle
+    pt = page.evaluate("KV.app.sign('exit')")
+    page.mouse.move(pt["x"], pt["y"])
+    expect(page.locator("#tip")).to_contain_text("Back to the concourse")
+    page.mouse.click(pt["x"], pt["y"])
+    expect(page.locator("#shopCard")).to_be_hidden()
+    page.wait_for_function("() => KV.app.cam().mode === 'concourse'", timeout=60000)
+    page.wait_for_function("() => KV.app.sign('floor') !== null", timeout=10000)
+    page.wait_for_timeout(3000)
+    pt = page.evaluate("KV.app.sign('floor')")
+    page.mouse.click(pt["x"], pt["y"])
+    page.wait_for_function(
+        "() => KV.app.cam().floor === 2 && KV.app.cam().mode === 'concourse'",
+        timeout=90000,
+    )
+    expect(page.locator('#floorSeg button[data-floor="2"]')).to_have_attribute(
+        "aria-pressed", "true"
+    )

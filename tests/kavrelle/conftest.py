@@ -49,3 +49,10 @@ def engine(db_url: str) -> Iterator[Engine]:
 def session(engine: Engine) -> Iterator[Session]:
     with make_session_factory(engine)() as s:
         yield s
+
+
+@pytest.fixture(autouse=True)
+def _private_outbox(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Keep test emails out of the working folder: every test gets its own outbox."""
+    monkeypatch.setenv("KAVRELLE_OUTBOX", str(tmp_path / "outbox"))
+    monkeypatch.delenv("KAVRELLE_SMTP_HOST", raising=False)

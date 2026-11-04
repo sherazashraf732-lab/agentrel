@@ -20,7 +20,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from kavrelle.models import AuthSession, Customer
+from kavrelle.models import AuthSession, Customer, PasswordReset
 from kavrelle.shop import Buyer, Conflict, Invalid, _clean_buyer
 
 SESSION_DAYS = 14
@@ -175,3 +175,46 @@ def end_session(session: Session, token: str | None) -> None:
         session.execute(
             delete(AuthSession).where(AuthSession.token_hash == _token_hash(token))
         )
+
+
+RESET_MINUTES = 30
+
+
+def request_reset(session: Session, email: str) -> tuple[Customer, str] | None:
+    """Start a password reset. Returns None for unknown emails; the API answers the same either way."""
+    customer = session.scalar(
+        select(Customer).where(Customer.email == email.strip().lower())
+    )
+    if customer is None or not customer.password_hash:
+        return None
+    token = secrets.token_urlsafe(32)
+    session.add(PasswordReset(token_hash=_token_hash(token), customer=customer,
+                              expires_at=datetime.now(UTC) + timedelta(minutes=RESET_MINUTES)))  # fmt: skip
+    session.flush()
+    return customer, token
+
+
+def reset_password(session: Session, token: str, password: str) -> Customer:
+    """Use a reset link once: set the new password and sign out every browser."""
+    _check_password(password)
+    row = session.scalar(
+        select(PasswordReset).where(
+            PasswordReset.token_hash == _token_hash(token or "")
+        )
+    )
+    if row is None or row.used_at is not None:
+        raise Invalid(
+            "This reset link is not valid any more. Please ask for a new one."
+        )
+    expires = (
+        row.expires_at if row.expires_at.tzinfo else row.expires_at.replace(tzinfo=UTC)
+    )
+    if expires < datetime.now(UTC):
+        raise Invalid("This reset link has expired. Please ask for a new one.")
+    row.used_at = datetime.now(UTC)
+    row.customer.password_hash = hash_password(password)
+    session.execute(
+        delete(AuthSession).where(AuthSession.customer_id == row.customer_id)
+    )
+    session.flush()
+    return row.customer

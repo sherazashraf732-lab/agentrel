@@ -51,6 +51,20 @@ VAGUE = (
     "sure, i can help",
 )
 UNSURE_REPLY = "Sorry, I couldn’t finish that. Could you say it another way?"
+STATUS_WORDS = ("pending", "shipped", "delivered", "cancelled", "refunded")
+CLAIM_RE = re.compile(
+    r"\b(?:is|has been|was|been|now)\s+(?:now\s+)?(pending|shipped|delivered|cancell?ed|canceled|refunded)\b"
+)
+DOUBT_RE = re.compile(
+    r"\b(error|apolog\w*|unable|can't|can’t|cannot|can not|not able to|unfortunately|not possible|went wrong)\b"
+)
+EXPLAIN = {
+    "pending": "it’s placed and not shipped yet, so you can still cancel it. Just ask.",
+    "shipped": "it’s on its way to you.",
+    "delivered": "it has been delivered. If something is wrong, you can ask for a refund.",
+    "cancelled": "it was cancelled, so nothing will be charged.",
+    "refunded": "it has been refunded.",
+}
 
 SYSTEM_PROMPT = """You are Kavrelle Support, the customer assistant of Kavrelle, a 3D shopping mall.
 You help with orders (status, cancellations, refunds) and with finding products.
@@ -123,6 +137,42 @@ class _Ctx:
     job: Job
     calls: list[tuple[str, dict[str, Any], str, bool]] = field(default_factory=list)
     summary: str = ""  # what a person would say about the last tool result
+    last: tuple[str, bool, str | None] | None = (
+        None  # (tool, ok, order status it established)
+    )
+
+
+def grounded(reply: str, ctx: _Ctx) -> str:
+    """Keep the answer true to the last tool result; otherwise say the facts plainly.
+
+    A small model sometimes contradicts what the tool just returned ("there was an error",
+    "pending orders can't be changed") or claims an action that the store refused.
+    """
+    if ctx.last is None or not ctx.summary:
+        return reply
+    tool, ok, status = ctx.last
+    low = reply.lower()
+    claims = {
+        "cancelled" if c.startswith("cancel") else c for c in CLAIM_RE.findall(low)
+    }
+    doubt = DOUBT_RE.search(low) is not None
+    if (
+        ok
+        and status
+        and (
+            doubt
+            or (claims and claims != {status})
+            or (not claims and status not in low)
+        )
+    ):
+        return ctx.summary
+    if (
+        not ok
+        and tool in ("cancel_order", "refund_order")
+        and claims & {"cancelled", "refunded"}
+    ):
+        return ctx.summary
+    return reply
 
 
 def _identity(s: Session, ctx: _Ctx) -> Customer | None:
@@ -143,6 +193,16 @@ def make_tools(ctx: _Ctx) -> dict[str, Tool]:
         ctx.calls.append((name, args, result, ok))
         if say:
             ctx.summary = say
+        found = re.search(
+            r"\bis (?:now )?(pending|shipped|delivered|cancelled|refunded)\b", result
+        )
+        ctx.last = (
+            name,
+            ok,
+            found.group(1)
+            if ok and found and name in ("get_order", "cancel_order")
+            else None,
+        )
         if ok and done and done not in ctx.job.done_steps:
             ctx.job.done_steps.append(done)
         return result
@@ -191,6 +251,7 @@ def make_tools(ctx: _Ctx) -> dict[str, Tool]:
         args: dict[str, Any],
         act: Callable[[Session, Customer], str],
         done: str,
+        friendly: Callable[[str], str] | None = None,
     ) -> str:
         step(name)
         with session_scope(ctx.factory) as s:
@@ -204,9 +265,8 @@ def make_tools(ctx: _Ctx) -> dict[str, Tool]:
                 )
             try:
                 result = act(s, who)
-                return record(
-                    name, args, result, True, done, say=result.removeprefix("Done. ")
-                )
+                say = friendly(result) if friendly else result.removeprefix("Done. ")
+                return record(name, args, result, True, done, say=say)
             except shop.NotFound:
                 s.rollback()
                 msg = ("NOT ALLOWED: no order with that code belongs to this customer. "
@@ -231,9 +291,19 @@ def make_tools(ctx: _Ctx) -> dict[str, Tool]:
     def oid(x: object) -> str:
         return str(x).strip().lstrip("#").upper()
 
+    def _friendly_order(result: str) -> str:
+        m = re.match(r"Order (\S+) is (\w+)\. Total (\$[\d.,]+)", result)
+        if not m:
+            return result
+        code, status, total = m.groups()
+        return f"Your order {code} is {status}: {EXPLAIN.get(status, '')} Total {total}.".replace(
+            ":  ", ". "
+        )
+
     def get_order(order_id: str = "") -> str:
         return _guarded("get_order", {"order_id": order_id},
-                        lambda s, c: _order_text(shop.find_order(s, oid(order_id), c.email, c.zip_code)), "Order found")  # fmt: skip
+                        lambda s, c: _order_text(shop.find_order(s, oid(order_id), c.email, c.zip_code)), "Order found",
+                        _friendly_order)  # fmt: skip
 
     def cancel_order(order_id: str = "") -> str:
         def act(s: Session, c: Customer) -> str:
@@ -433,7 +503,7 @@ class SupportDesk:
             usable = bool(final) and not (
                 final.lower().startswith(VAGUE) and len(final) < 60
             )
-            reply = final if usable else (ctx.summary or UNSURE_REPLY)
+            reply = grounded(final, ctx) if usable else (ctx.summary or UNSURE_REPLY)
             if time.monotonic() - job.created > self.timeout_s:
                 return  # the browser was already told it took too long
         except Exception:  # noqa: BLE001 - any model/network failure becomes a polite offline reply

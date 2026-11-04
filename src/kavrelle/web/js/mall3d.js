@@ -21,7 +21,7 @@
   }
 
   function create(opts) {
-    const { canvas, catalog, onProgress, onPickProduct, onEnterShop, onHover, onContextLost } = opts;
+    const { canvas, catalog, onProgress, onPickProduct, onEnterShop, onHover, onContextLost, onLeaveShop, onFloor } = opts;
     let low = !!opts.lowGraphics;
 
     // ---------- renderer ----------
@@ -114,6 +114,18 @@
       const rail = box(0.12, 1.0, 8.2, TRIM, s * 0.9, FLOOR_H / 2 + 0.6, -26.85);
       rail.rotation.x = Math.PI / 4;
     }
+
+    // clickable way-finding: escalator signs (both floors) and the steps themselves
+    const navMeshes = [];
+    function navSign(text, sub, x, y, z, rotY, nav) {
+      const m = new T.Mesh(new T.PlaneGeometry(2.6, 0.65), basic(signTexture(text, sub, "#1F1A16", "#FFFFFF", 1024, 256)));
+      m.position.set(x, y, z); m.rotation.y = rotY; m.userData.nav = nav; scene.add(m); navMeshes.push(m);
+      return m;
+    }
+    navSign("▲ FLOOR 2", "Click to ride up", 0, 3.5, -23.4, 0, { kind: "floor", to: 2 });
+    navSign("▼ FLOOR 1", "Click to ride down", 0, FLOOR_H + 3.1, -30.6, 0, { kind: "floor", to: 1 });
+    const stepHit = new T.Mesh(new T.BoxGeometry(1.8, FLOOR_H, 6), new T.MeshBasicMaterial({ visible: false }));
+    stepHit.position.set(0, FLOOR_H / 2, -26.7); stepHit.userData.nav = { kind: "floor", to: 0 }; scene.add(stepHit); navMeshes.push(stepHit);
 
     // planters and benches
     function plant(pot, scale) {
@@ -326,6 +338,10 @@
       box(0.1, 0.25, 12.2, M(color, 0.6), 9.84, 0.125, 0, g); // skirting
       box(0.06, 0.16, 12.2, M(color, 0.6), 9.86, 4.35, 0, g); // picture rail
       for (const s of [-1, 1]) box(10, FLOOR_H, 0.3, inner, 5, FLOOR_H / 2, s * 6.2, g);
+      const exit = new T.Mesh(once("exitsign", () => new T.PlaneGeometry(1.1, 0.28)),
+        once("exitmat", () => basic(signTexture("← EXIT", "Back to the concourse", "#1F1A16", "#FFFFFF", 1024, 256))));
+      exit.position.set(0.15, 2.45, 0); exit.rotation.y = Math.PI / 2; // faces into the shop only
+      exit.userData.nav = { kind: "exit" }; g.add(exit);
       // storefront
       const front = [];
       for (const s of [-1, 1]) front.push(box(0.5, FLOOR_H - 0.3, 0.6, wallM, 0, (FLOOR_H - 0.3) / 2, s * 6.1, g));
@@ -383,6 +399,24 @@
     const look = target.look.clone();
     camera.position.copy(target.pos);
 
+    let route = null, routeDone = null; // escalator ride: a queue of {pos, look}
+    function ride(points, done) {
+      cam.mode = "transit"; route = points.slice(); routeDone = done;
+      target.pos.copy(route[0].pos); target.look.copy(route[0].look); invalidate();
+    }
+    function changeFloor(to) {
+      const from = cam.floor; to = to || (from === 1 ? 2 : 1);
+      if (to === from || cam.mode === "transit") return;
+      const v = (x, y, z) => new T.Vector3(x, y, z), top = FLOOR_H + 2.1;
+      const up = [{ pos: v(0, 2.1, -21.5), look: v(0, top, -32) }, { pos: v(0, top, -31.2), look: v(0, top, 0) }];
+      const down = [{ pos: v(0, top, -32.5), look: v(0, 2.1, -20) }, { pos: v(0, 2.1, -21.5), look: v(0, 2.1, 0) }];
+      cam.shop = null;
+      ride(to === 2 ? up : down, () => {
+        cam.mode = "concourse"; cam.floor = to; cam.z = to === 2 ? -31.2 : -21.5; cam.yaw = Math.PI; cam.pitch = 0; // face back down the mall
+        setHover(null); updateTarget(); if (onFloor) onFloor(to);
+      });
+    }
+
     function updateTarget() {
       if (cam.mode === "transit") return;
       if (cam.mode === "concourse") {
@@ -392,8 +426,8 @@
         target.look.copy(target.pos).addScaledVector(dir, 20);
       } else {
         const { group } = shops.get(cam.shop);
-        target.pos.copy(group.localToWorld(new T.Vector3(0.6, 2.2, 0)));
-        const lookLocal = new T.Vector3(9.8, 2.6 + Math.tan(cam.pitch) * 9, Math.tan(cam.yaw) * 9);
+        target.pos.copy(group.localToWorld(new T.Vector3(1.8, 2.2, 0)));
+        const lookLocal = new T.Vector3(1.8 + Math.cos(cam.yaw) * 8, 2.6 + Math.tan(cam.pitch) * 8, Math.sin(cam.yaw) * 8);
         target.look.copy(group.localToWorld(lookLocal));
       }
       invalidate();
@@ -410,9 +444,13 @@
       ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
       ray.setFromCamera(ndc, camera);
       if (cam.mode === "transit") return null;
-      const candidates = cam.mode === "shop" ? shops.get(cam.shop).frames.flatMap((f) => f.children) : storefrontMeshes;
+      const here = cam.mode === "shop" ? shops.get(cam.shop) : null;
+      const candidates = here ? [...here.frames.flatMap((f) => f.children), ...here.group.children.filter((c) => c.userData.nav)]
+        : [...storefrontMeshes, ...navMeshes];
       const hit = ray.intersectObjects(candidates, false).find((h) => h.distance < 40);
       if (!hit) return null;
+      const nav = hit.object.userData.nav;
+      if (nav) return nav.kind === "exit" ? { kind: "exit" } : { kind: "floor", to: nav.to || (cam.floor === 1 ? 2 : 1) };
       if (hit.object.userData.product) return { kind: "product", info: hit.object.userData.product, frame: hit.object.parent };
       if (hit.object.userData.shop) return { kind: "shop", slug: hit.object.userData.shop };
       return null;
@@ -433,8 +471,7 @@
         drag.moved = Math.max(drag.moved, Math.abs(dx) + Math.abs(dy));
         if (drag.moved > 4) {
           canvas.classList.add("dragging");
-          const lim = cam.mode === "shop" ? 0.62 : 0.9;
-          cam.yaw = Math.max(-lim, Math.min(lim, drag.yaw - dx * 0.004));
+          cam.yaw = drag.yaw - dx * 0.005; // full 360° turn, in shops and on the concourse
           cam.pitch = Math.max(-0.35, Math.min(0.3, drag.pitch + dy * 0.003));
           updateTarget(); setHover(null);
         }
@@ -451,15 +488,25 @@
       if (!h) return;
       if (h.kind === "product" && onPickProduct) onPickProduct(h.info.slug);
       if (h.kind === "shop" && onEnterShop) onEnterShop(h.slug);
+      if (h.kind === "exit" && onLeaveShop) onLeaveShop();
+      if (h.kind === "floor") changeFloor(h.to);
     };
     canvas.addEventListener("pointerup", endDrag);
     canvas.addEventListener("pointercancel", () => { drag = null; canvas.classList.remove("dragging"); });
     canvas.addEventListener("pointerleave", () => setHover(null));
-    canvas.addEventListener("wheel", (e) => { e.preventDefault(); walk(e.deltaY > 0 ? -2 : 2); }, { passive: false });
+    let wheelAt = 0;
+    canvas.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      if (cam.mode === "shop") { // scrolling back walks out of the shop
+        if (e.deltaY > 0 && performance.now() - wheelAt > 600 && onLeaveShop) onLeaveShop();
+        wheelAt = performance.now(); return;
+      }
+      walk(e.deltaY > 0 ? -2 : 2);
+    }, { passive: false });
 
     function walk(dz) {
       if (cam.mode !== "concourse") return;
-      cam.z = Math.max(-30, Math.min(14, cam.z - dz));
+      cam.z = Math.max(-31, Math.min(14, cam.z - dz * Math.cos(cam.yaw))); // forward is wherever you face
       updateTarget();
     }
 
@@ -479,6 +526,11 @@
         camera.position.lerp(target.pos, k); look.lerp(target.look, k); moving = true;
       }
       camera.lookAt(look);
+      if (route && camera.position.distanceTo(target.pos) < 0.6) {
+        route.shift();
+        if (route.length) { target.pos.copy(route[0].pos); target.look.copy(route[0].look); }
+        else { route = null; const done = routeDone; routeDone = null; done(); }
+      }
       if (waypoint && camera.position.distanceTo(target.pos) < 0.8) {
         cam.mode = "shop"; cam.shop = waypoint; waypoint = null; updateTarget();
       }
@@ -507,7 +559,7 @@
     // ---------- public controller ----------
     const controller = {
       goConcourse(floor) {
-        waypoint = null;
+        waypoint = null; route = null; routeDone = null;
         if (cam.mode !== "concourse") {
           const here = cam.shop ? slot(shops.get(cam.shop).shop) : null;
           if (here) cam.z = here.z + 2;
@@ -516,8 +568,10 @@
         if (floor) cam.floor = floor;
         updateTarget();
       },
+      changeFloor,
       goShop(slug) {
         if (!shops.has(slug)) return false;
+        route = null; routeDone = null;
         const { shop, group } = shops.get(slug);
         const s = slot(shop);
         const via = new T.Vector3(0, s.y + 2.1, s.z);
@@ -533,8 +587,19 @@
         updateTarget(); return true;
       },
       walk,
-      look(dyaw) { cam.yaw = Math.max(-0.9, Math.min(0.9, cam.yaw + dyaw)); updateTarget(); },
+      look(dyaw) { cam.yaw += dyaw; updateTarget(); },
       state() { return { mode: cam.mode, floor: cam.floor, shop: cam.shop }; },
+      // where a way-finding sign is on screen (used by browser tests and the demo recording)
+      signOnScreen(kind) {
+        const pool = cam.mode === "shop" ? shops.get(cam.shop).group.children : navMeshes;
+        const m = pool.find((c) => c.userData.nav && c.userData.nav.kind === kind && c.material.visible !== false
+          && (kind !== "floor" || c.userData.nav.to !== cam.floor));
+        if (!m) return null;
+        camera.updateMatrixWorld();
+        const p = m.getWorldPosition(new T.Vector3()).project(camera), r = canvas.getBoundingClientRect();
+        if (p.z > 1 || Math.abs(p.x) > 1 || Math.abs(p.y) > 1) return null;
+        return { x: r.left + (p.x + 1) / 2 * r.width, y: r.top + (1 - p.y) / 2 * r.height };
+      },
       setLow(v) { low = !!v; setPixelRatio(); resize(); },
       pause(v) { running = !v; if (!v) { clock.getDelta(); invalidate(); } },
       productCount: productFrames.length / 3,

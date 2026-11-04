@@ -43,7 +43,7 @@ All scores are in [0, 1]; higher is more reliable.
 | Consistency | Outcome `C_out` | mean over tasks of (2·p̂ − 1)² | Same task, same result every run? |
 | | Trajectory, distribution `C_traj^d` | 1 − mean pairwise Jensen-Shannon divergence of tool-use frequencies | Uses the same tools each run? |
 | | Trajectory, sequence `C_traj^s` | 1 − mean pairwise normalized Levenshtein distance of tool sequences | In the same order? |
-| | Resource `C_res` | exp(−mean coefficient of variation) of time, model calls, tokens | Is cost predictable? |
+| | Resource `C_res` | exp(−mean coefficient of variation) of time, model calls, tokens, over successful runs (App. C.1) | Is cost predictable? |
 | Robustness | Fault `R_fault` | min(Acc_fault / Acc_0, 1), tool calls fail with p = 0.2 | Survives timeouts and 503s? |
 | | Environment `R_env` | min(Acc_env / Acc_0, 1), renamed parameters and fields, other date format | Survives an API change? |
 | | Prompt `R_prompt` | min(Acc_paraphrase / Acc_0, 1) | Survives a rephrased request? |
@@ -84,6 +84,60 @@ circumvention and financial accuracy.
   text. The live order table and any safety violations update as you chat.
 - **Dashboard** (`/dashboard`): start an evaluation in the background, then
   browse reports with all metrics and open any run to read its full transcript.
+
+## Kavrelle: a real website that uses it
+
+**Kavrelle** (`src/kavrelle`) is a complete 3D shopping mall built to put a
+support agent in front of customers and measure it with the same 12 metrics.
+
+- **3D mall** (Three.js): twelve shops on two floors with real product photos.
+  Drag to turn a full 360°, scroll to walk, click a shop to walk in, click the
+  EXIT sign to leave, click the escalator to change floors. A grid view works
+  on phones and machines without WebGL.
+- **Shop**: sizes and stock, cart, checkout, order codes, tracking,
+  cancellation and refunds, customer accounts with password reset.
+- **Kavrelle Support** chat, answered by a local model with tools that
+  *enforce* the store policy. Answers are checked against the last tool result.
+  If the model contradicts the facts (for example "there was an error" about
+  a pending order), the customer gets the plain facts instead.
+- **Emails**: order confirmation, cancellation, refund, welcome, password reset
+  and contact receipts. They go out over SMTP when configured; otherwise they
+  are saved as `.eml` files in an outbox folder.
+- **Pages**: Help & FAQ, Contact form, About, Terms of Service, Privacy Policy,
+  and a friendly 404 page.
+- **SEO**: page titles, meta descriptions, canonical links, Open Graph and
+  Twitter cards, JSON-LD structured data, plus `robots.txt` and `sitemap.xml`.
+- **Owner console** (`/admin`): sales overview, the Reliability Lab (runs the
+  paper's protocol on the live support model and shows all 12 metrics), an
+  audit of every chat step, and the contact inbox.
+- **Security**: strict Content Security Policy, scrypt passwords, hashed
+  session and reset tokens, HttpOnly cookies, rate limits, no tracking.
+
+```bash
+uv run kavrelle setup                 # create the database and the demo catalogue
+uv run kavrelle serve                 # http://127.0.0.1:8000
+uv run kavrelle make-admin you@example.com
+```
+
+| Setting | What it does |
+|---|---|
+| `KAVRELLE_DATABASE_URL` | SQLite by default; PostgreSQL works too (`postgresql+psycopg://…`) |
+| `KAVRELLE_SUPPORT_MODEL` | Ollama model for the chat (default `llama3.2:3b`) |
+| `KAVRELLE_SMTP_HOST`, `_PORT`, `_USER`, `_PASSWORD`, `KAVRELLE_MAIL_FROM` | Real email delivery |
+| `KAVRELLE_OUTBOX` | Folder for `.eml` files when SMTP is not set (default `outbox`) |
+| `KAVRELLE_PUBLIC_URL` | Public address used in canonical links, Open Graph and the sitemap |
+
+**Measured result** (`llama3.2:3b`, K = 5 runs per scenario, paper protocol):
+overall reliability **0.78** (consistency 0.98, robustness 0.89,
+predictability 0.47), safety 0.58, accuracy 0.38. The model is consistent and
+robust but poorly calibrated, which is the paper's point: reliability and
+accuracy are different things.
+
+**Demo**: `uv run python scripts/record_demo.py --headed` records the whole
+site. The recording covers the 3D mall, grid view, sign-up, checkout,
+tracking, a real support chat that cancels an order, every info page and the
+admin console. It verifies 29 steps on the way and ends with a pass/fail
+summary.
 
 ## Use it on your own agent
 
@@ -129,14 +183,17 @@ Documented so results can be compared and challenged:
 
 ```bash
 uv sync
-uv run pytest        # 160+ tests, no model or network needed
+uv run pytest        # 380+ tests, no model or network needed
+KAVRELLE_E2E=1 uv run pytest tests/e2e   # 21 real-browser tests (Playwright)
 uv run ruff check .
 uv run mypy src
 ```
 
 Built test-first: every metric is checked against hand-computed values, a
 simulated model (`MockLLM`) and scripted tool-calling models verify the full
-pipeline, and the website is tested with FastAPI's test client.
+pipeline, the API is tested with FastAPI's test client, and the website is
+tested in a real browser (3D navigation by mouse included). CI runs everything
+on SQLite and PostgreSQL.
 
 ## Reference
 
@@ -146,6 +203,11 @@ https://arxiv.org/abs/2602.16666
 
 `agentrel` is an independent implementation and is not affiliated with the authors.
 
+## Author
+
+Created by **Sheraz Ashraf**. © 2026 Sheraz Ashraf.
+
 ## License
 
-MIT, see [LICENSE](LICENSE).
+The code is MIT-licensed, see [LICENSE](LICENSE). Product photos are from
+Pexels and remain the work of their credited photographers.

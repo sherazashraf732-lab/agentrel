@@ -20,8 +20,9 @@
     <button type="button" data-view="overview" aria-current="true">Overview</button>
     <button type="button" data-view="lab">Reliability Lab</button>
     <button type="button" data-view="chats">Conversations</button>
+    <button type="button" data-view="inbox">Contact inbox</button>
   </nav>
-  <div class="side-foot"><a href="/" class="side-link">← Back to the mall</a><span id="who"></span></div>
+  <div class="side-foot"><a href="/" class="side-link">← Back to the mall</a><span id="who"></span><small class="credit">© 2026 Created by Sheraz Ashraf. All rights reserved.</small></div>
 </aside>
 
 <main class="main" id="main">
@@ -86,6 +87,11 @@
       <ul class="chat-list" id="chatList"></ul>
       <article class="panel chat-detail" id="chatDetail"><p class="sub">Choose a conversation to see every step the assistant took.</p></article>
     </div>
+  </section>
+
+  <section id="v-inbox" class="view" hidden>
+    <header class="v-head"><div><div class="eyebrow">Contact page</div><h1>Contact inbox</h1></div></header>
+    <ul class="inbox" id="inboxList"></ul>
   </section>
 </main>
 

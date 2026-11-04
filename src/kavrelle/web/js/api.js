@@ -89,6 +89,7 @@
     adminStart: (n) => request("POST", "/api/admin/runs", { n_runs: n }),
     adminProgress: () => request("GET", "/api/admin/lab/progress", null, { retries: 0 }),
     adminChats: () => request("GET", "/api/admin/conversations"),
+    adminMessages: () => request("GET", "/api/admin/messages"),
     adminChat: (id) => request("GET", `/api/admin/conversations/${enc(id)}`),
   };
 })();

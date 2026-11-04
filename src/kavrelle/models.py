@@ -28,6 +28,7 @@ MESSAGE_ROLES = ("user", "assistant")
 MAX_LINE_QUANTITY = 10
 RUN_STATUSES = ("queued", "running", "done", "failed")
 SEVERITIES = ("low", "medium", "high")
+CONTACT_TOPICS = ("order", "returns", "account", "privacy", "other")
 
 # The 12 metrics of Rabanser et al. (ICML 2026), as stored in metric_results.key.
 METRIC_KEYS = (
@@ -333,3 +334,36 @@ class AuthSession(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     customer: Mapped[Customer] = relationship()
+
+
+class PasswordReset(Base):
+    """A one-time password reset link. Only a SHA-256 of the emailed token is stored."""
+
+    __tablename__ = "password_resets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    customer_id: Mapped[int] = mapped_column(
+        ForeignKey("customers.id", ondelete="CASCADE"), index=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    customer: Mapped[Customer] = relationship()
+
+
+class ContactMessage(Base):
+    __tablename__ = "contact_messages"
+    __table_args__ = (
+        CheckConstraint(_in("topic", CONTACT_TOPICS), name="topic_valid"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    email: Mapped[str] = mapped_column(String(160))
+    topic: Mapped[str] = mapped_column(String(20))
+    message: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    handled: Mapped[bool] = mapped_column(default=False, server_default="0")
