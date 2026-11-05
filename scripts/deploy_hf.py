@@ -54,6 +54,12 @@ def main() -> None:
     api.create_repo(space, repo_type="space", space_sdk="docker", exist_ok=True)
     settings = hosted_settings()
     url = settings.get("KAVRELLE_DATABASE_URL", "")
+    for plain in (
+        "postgresql://",
+        "postgres://",
+    ):  # Neon gives the plain form; the app needs the driver
+        if url.startswith(plain):
+            url = "postgresql+psycopg://" + url[len(plain) :]
     if url:
         api.add_space_secret(space, "KAVRELLE_DATABASE_URL", url)
         print("Database address saved as a private Space secret.")
