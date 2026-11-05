@@ -38,13 +38,9 @@ def exe(name: str) -> str:
 def run(
     *args: str, env: dict[str, str] | None = None, check: bool = True
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        args,
-        capture_output=True,
-        text=True,
-        env={**os.environ, **(env or {})},
-        check=check,
-    )
+    print("  >", Path(args[0]).name, *(a for a in args[1:3]), flush=True)
+    return subprocess.run(args, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120,
+                          env={**os.environ, **(env or {})}, check=check)  # fmt: skip
 
 
 def pg_ctl(action: str) -> str:
@@ -63,8 +59,19 @@ def pg_ctl(action: str) -> str:
             if os.name == "nt"
             else 0
         )
-        code = subprocess.run(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                              creationflags=flags).returncode  # fmt: skip
+        print("  > pg_ctl start", flush=True)
+        subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         creationflags=flags, close_fds=True)  # fmt: skip
+        for _ in range(60):  # wait until the server answers
+            time.sleep(1)
+            if (
+                run(
+                    exe("pg_isready"), "-h", "localhost", "-p", str(PORT), check=False
+                ).returncode
+                == 0
+            ):
+                return "server started"
+        code = 1
         return (
             "server started"
             if code == 0
