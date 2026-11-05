@@ -532,8 +532,21 @@ def create_app(
             return _order_out(order)
 
     # ---------- accounts ----------
+    trust_proxy = os.environ.get("KAVRELLE_TRUST_PROXY", "") == "1"
+
     def _client(request: Request) -> str:
-        return request.client.host if request.client else "unknown"
+        """Who is asking, for rate limits. Behind a tunnel every request arrives from this
+        machine, so with KAVRELLE_TRUST_PROXY=1 the visitor's address comes from the tunnel's
+        header, and only when the request really came from the local tunnel."""
+        host = request.client.host if request.client else "unknown"
+        if trust_proxy and host in ("127.0.0.1", "::1"):
+            forwarded = request.headers.get("cf-connecting-ip") or request.headers.get(
+                "x-forwarded-for", ""
+            )
+            first = forwarded.split(",")[0].strip()
+            if first and len(first) <= 45:
+                return first
+        return host
 
     def _set_cookie(response: Response, token: str) -> None:
         response.set_cookie(SESSION_COOKIE, token, max_age=auth.SESSION_DAYS * 86400,

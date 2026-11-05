@@ -179,3 +179,43 @@ def test_forged_cookie_is_ignored(client: TestClient) -> None:
     assert client.get("/api/me").status_code == 401
     client.cookies.set("kv_session", "x" * 5000)
     assert client.get("/api/me").status_code == 401
+
+
+def test_behind_a_tunnel_each_visitor_has_their_own_limit(
+    engine_seeded: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("KAVRELLE_TRUST_PROXY", "1")
+    c = TestClient(
+        create_app(Settings(), engine=engine_seeded), client=("127.0.0.1", 5000)
+    )
+    bad = {"email": "nobody@example.com", "password": "guess12345"}
+    for _ in range(5):
+        c.post("/api/auth/login", json=bad, headers={"CF-Connecting-IP": "203.0.113.7"})
+    assert c.post("/api/auth/login", json={**bad, "email": "x@example.com"},
+                  headers={"CF-Connecting-IP": "203.0.113.7"}).status_code == 429  # fmt: skip
+    other = c.post(
+        "/api/auth/login",
+        json={**bad, "email": "y@example.com"},
+        headers={"CF-Connecting-IP": "198.51.100.9"},
+    )
+    assert other.status_code == 422, "a different visitor is not blocked"
+
+
+def test_forwarded_header_is_ignored_from_outside(
+    engine_seeded: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("KAVRELLE_TRUST_PROXY", "1")
+    c = TestClient(
+        create_app(Settings(), engine=engine_seeded), client=("203.0.113.50", 5000)
+    )
+    bad = {"email": "nobody@example.com", "password": "guess12345"}
+    for i in range(5):
+        c.post("/api/auth/login", json=bad, headers={"CF-Connecting-IP": f"10.0.0.{i}"})
+    r = c.post(
+        "/api/auth/login",
+        json={**bad, "email": "z@example.com"},
+        headers={"CF-Connecting-IP": "10.9.9.9"},
+    )
+    assert r.status_code == 429, (
+        "spoofed headers from a remote client must not reset the limit"
+    )
