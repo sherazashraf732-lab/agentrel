@@ -219,3 +219,42 @@ def test_forwarded_header_is_ignored_from_outside(
     assert r.status_code == 429, (
         "spoofed headers from a remote client must not reset the limit"
     )
+
+
+def test_hosted_behind_a_proxy_reads_the_forwarded_visitor(
+    engine_seeded: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("KAVRELLE_TRUST_PROXY", "all")
+    c = TestClient(
+        create_app(Settings(), engine=engine_seeded), client=("10.1.2.3", 5000)
+    )
+    bad = {"email": "nobody@example.com", "password": "guess12345"}
+    for _ in range(5):
+        c.post(
+            "/api/auth/login",
+            json=bad,
+            headers={"X-Forwarded-For": "203.0.113.7, 10.0.0.1"},
+        )
+    assert c.post("/api/auth/login", json={**bad, "email": "q@example.com"},
+                  headers={"X-Forwarded-For": "203.0.113.7"}).status_code == 429  # fmt: skip
+    assert c.post("/api/auth/login", json={**bad, "email": "r@example.com"},
+                  headers={"X-Forwarded-For": "198.51.100.1"}).status_code == 422  # fmt: skip
+
+
+def test_frames_only_from_an_allowed_host(
+    engine_seeded: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plain = TestClient(create_app(Settings(), engine=engine_seeded)).get("/api/health")
+    assert (
+        plain.headers["x-frame-options"] == "DENY"
+        and "frame-ancestors 'none'" in plain.headers["content-security-policy"]
+    )
+    monkeypatch.setenv(
+        "KAVRELLE_FRAME_ANCESTORS", "https://huggingface.co javascript:alert(1)"
+    )
+    r = TestClient(create_app(Settings(), engine=engine_seeded)).get("/api/health")
+    assert "x-frame-options" not in r.headers
+    assert (
+        "frame-ancestors 'self' https://huggingface.co;"
+        in r.headers["content-security-policy"]
+    )

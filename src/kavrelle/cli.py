@@ -109,3 +109,7 @@ def import_run(
             f"Imported {run.name}: {len(run.metrics)} metrics, {len(run.violations)} violations."
         )
     engine.dispose()
+
+
+if __name__ == "__main__":
+    app()

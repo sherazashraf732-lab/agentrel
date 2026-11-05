@@ -16,3 +16,7 @@ agentrel-results/
 *.db
 
 outbox/
+
+# hosted deployment secrets
+.env.*
+!.env.example

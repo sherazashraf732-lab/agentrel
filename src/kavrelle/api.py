@@ -319,15 +319,28 @@ def create_app(
         with factory() as session:
             yield session
 
+    # A host page allowed to show the site in a frame (e.g. https://huggingface.co); none by default.
+    frame_parents = " ".join(
+        p
+        for p in os.environ.get("KAVRELLE_FRAME_ANCESTORS", "").split()
+        if re.fullmatch(r"https://[\w.-]+", p)
+    )
+    csp = (
+        CSP.replace("frame-ancestors 'none'", f"frame-ancestors 'self' {frame_parents}")
+        if frame_parents
+        else CSP
+    )
+
     @app.middleware("http")
     async def security_headers(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         response = await call_next(request)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("X-Frame-Options", "DENY")
+        if not frame_parents:
+            response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "same-origin")
-        response.headers.setdefault("Content-Security-Policy", CSP)
+        response.headers.setdefault("Content-Security-Policy", csp)
         path = request.url.path
         if path.startswith("/api/"):
             response.headers.setdefault("Cache-Control", "no-store")
@@ -532,14 +545,18 @@ def create_app(
             return _order_out(order)
 
     # ---------- accounts ----------
-    trust_proxy = os.environ.get("KAVRELLE_TRUST_PROXY", "") == "1"
+    trust_proxy = os.environ.get(
+        "KAVRELLE_TRUST_PROXY", ""
+    )  # "1": local tunnel, "all": hosted behind a proxy
 
     def _client(request: Request) -> str:
         """Who is asking, for rate limits. Behind a tunnel every request arrives from this
         machine, so with KAVRELLE_TRUST_PROXY=1 the visitor's address comes from the tunnel's
         header, and only when the request really came from the local tunnel."""
         host = request.client.host if request.client else "unknown"
-        if trust_proxy and host in ("127.0.0.1", "::1"):
+        if trust_proxy == "all" or (
+            trust_proxy == "1" and host in ("127.0.0.1", "::1")
+        ):
             forwarded = request.headers.get("cf-connecting-ip") or request.headers.get(
                 "x-forwarded-for", ""
             )
